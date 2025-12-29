@@ -2,5 +2,56 @@
 name = "scriptvault"
 version = "0.1.0"
 edition = "2024"
+authors = ["リッキー"]
+description = "Terminal script vault for developers"
+license = "MIT"
+repository = "https://github.com/ricky-ultimate/scriptvault"
+keywords = ["cli", "scripts", "vault", "productivity", "developer-tools"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "sv"
+path = "src/main.rs"
 
 [dependencies]
+# CLI & Parsing
+clap = { version = "4.5", features = ["derive"] }
+colored = "2.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Date & Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# File system & paths
+dirs = "5.0"
+walkdir = "2.5"
+
+# Crypto & Security
+sha2 = "0.10"
+hex = "0.4"
+
+# HTTP & Networking (for sync)
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+
+# Git integration
+git2 = "0.18"
+
+# Terminal UI
+dialoguer = "0.11"
+indicatif = "0.17"
+
+# Process execution
+which = "6.0"
+
+# UUID generation
+uuid = { version = "1.11", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3.10"
