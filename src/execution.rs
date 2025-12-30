@@ -1,0 +1,315 @@
+use crate::cli::{HistoryArgs, RunArgs};
+use crate::config::Config;
+use crate::context;
+use crate::script::{ExecutionRecord, Script};
+use crate::vault::load_scripts_local;
+use anyhow::{Result, anyhow};
+use colored::*;
+use dialoguer::Confirm;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::Path;
+use std::process::{Command, Stdio};
+use std::time::Instant;
+
+pub fn run_script(args: RunArgs) -> Result<()> {
+    let config = Config::load()?;
+
+    // Load script from vault
+    let scripts = load_scripts_local()?;
+    let script = scripts
+        .iter()
+        .find(|s| s.name == args.script)
+        .ok_or_else(|| anyhow!("Script not found: {}", args.script))?;
+
+    // Safety check
+    if !script.is_safe() {
+        println!(
+            "{}",
+            "⚠ Warning: This script contains potentially dangerous commands!"
+                .red()
+                .bold()
+        );
+        if !args.ci && !args.dry_run {
+            let proceed = Confirm::new()
+                .with_prompt("Are you sure you want to run this script?")
+                .default(false)
+                .interact()?;
+
+            if !proceed {
+                println!("Execution cancelled.");
+                return Ok(());
+            }
+        }
+    }
+
+    // Show preview
+    show_script_preview(script, &args)?;
+
+    // Confirm execution
+    if config.confirm_before_run && !args.ci && !args.dry_run {
+        println!();
+        let proceed = Confirm::new()
+            .with_prompt("Run this script?")
+            .default(true)
+            .interact()?;
+
+        if !proceed {
+            println!("Execution cancelled.");
+            return Ok(());
+        }
+    }
+
+    if args.dry_run {
+        println!();
+        println!(
+            "{}",
+            "Dry run - script would execute with these settings".yellow()
+        );
+        return Ok(());
+    }
+
+    // Execute the script
+    println!();
+    println!("{}", "Executing script...".cyan().bold());
+    println!();
+
+    let start = Instant::now();
+    let result = execute_script(script, &args.args)?;
+    let duration = start.elapsed();
+
+    // Record execution
+    let ctx = context::detect_context()?;
+    let execution = ExecutionRecord {
+        id: uuid::Uuid::new_v4().to_string(),
+        script_id: script.id.clone(),
+        script_version: script.version.clone(),
+        executed_by: config
+            .username
+            .clone()
+            .unwrap_or_else(|| "local".to_string()),
+        executed_at: chrono::Utc::now(),
+        exit_code: result.exit_code,
+        duration_ms: duration.as_millis() as u64,
+        output: Some(result.output),
+        error: result.error,
+        context: ctx,
+    };
+
+    save_execution_record(&execution)?;
+
+    // Show result
+    println!();
+    if result.exit_code == 0 {
+        println!(
+            "{} Script completed successfully in {:.2}s",
+            "✓".green().bold(),
+            duration.as_secs_f64()
+        );
+    } else {
+        println!(
+            "{} Script failed with exit code {} in {:.2}s",
+            "✗".red().bold(),
+            result.exit_code,
+            duration.as_secs_f64()
+        );
+    }
+
+    Ok(())
+}
+
+fn show_script_preview(script: &Script, args: &RunArgs) -> Result<()> {
+    println!("╭{}╮", "─".repeat(60));
+    println!(
+        "│ {} {} │",
+        script.name.yellow().bold(),
+        script.version.dimmed()
+    );
+    println!("├{}┤", "─".repeat(60));
+    println!("│ │");
+
+    if !script.tags.is_empty() {
+        println!("│ Tags: {} │", script.tags.join(", ").cyan());
+    }
+
+    if let Some(desc) = &script.description {
+        println!("│ Description: {} │", desc);
+    }
+
+    println!("│ │");
+    println!("│ This script will: │");
+
+    if let Some(dir) = &script.context.directory {
+        println!("│  • Execute in: {} │", dir.yellow());
+    }
+
+    println!("│  • Language: {} │", script.language.to_string().green());
+
+    let success_rate = script.success_rate();
+    if script.metadata.use_count > 0 {
+        let rate_color = if success_rate > 90.0 {
+            "green"
+        } else if success_rate > 70.0 {
+            "yellow"
+        } else {
+            "red"
+        };
+        println!(
+            "│  • Success Rate: {:.1}% ({}/{} runs) │",
+            success_rate, script.metadata.success_count, script.metadata.use_count
+        );
+    }
+
+    println!("│ │");
+    println!("╰{}╯", "─".repeat(60));
+
+    Ok(())
+}
+
+struct ExecutionResult {
+    exit_code: i32,
+    output: String,
+    error: Option<String>,
+}
+
+fn execute_script(script: &Script, args: &[String]) -> Result<ExecutionResult> {
+    // Create a temporary file for the script
+    let temp_dir = std::env::temp_dir();
+    let script_path = temp_dir.join(format!("{}.sh", script.name));
+
+    fs::write(&script_path, &script.content)?;
+
+    // Make it executable on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&script_path)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&script_path, perms)?;
+    }
+
+    // Determine the interpreter
+    let (interpreter, interpreter_args) = match script.language {
+        crate::script::ScriptLanguage::Bash => ("bash", vec![]),
+        crate::script::ScriptLanguage::Shell => ("sh", vec![]),
+        crate::script::ScriptLanguage::Python => ("python3", vec![]),
+        crate::script::ScriptLanguage::Ruby => ("ruby", vec![]),
+        crate::script::ScriptLanguage::Perl => ("perl", vec![]),
+        crate::script::ScriptLanguage::PowerShell => ("powershell", vec!["-File"]),
+        _ => ("bash", vec![]),
+    };
+
+    // Execute
+    let output = Command::new(interpreter)
+        .args(interpreter_args)
+        .arg(&script_path)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()?;
+
+    // Clean up
+    fs::remove_file(script_path).ok();
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    // Print output
+    if !stdout.is_empty() {
+        print!("{}", stdout);
+    }
+    if !stderr.is_empty() {
+        eprint!("{}", stderr);
+    }
+
+    Ok(ExecutionResult {
+        exit_code: output.status.code().unwrap_or(1),
+        output: stdout,
+        error: if stderr.is_empty() {
+            None
+        } else {
+            Some(stderr)
+        },
+    })
+}
+
+pub fn show_history(args: HistoryArgs) -> Result<()> {
+    let history_path = Config::history_path()?;
+
+    if !history_path.exists() {
+        println!("No execution history found.");
+        return Ok(());
+    }
+
+    let contents = fs::read_to_string(history_path)?;
+    let records: Vec<ExecutionRecord> = contents
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect();
+
+    let filtered: Vec<&ExecutionRecord> = records
+        .iter()
+        .filter(|r| {
+            if let Some(ref script_name) = args.script {
+                // Filter by script name (need to load scripts to match ID to name)
+                // For now, just show all
+            }
+            if args.failed && r.exit_code == 0 {
+                return false;
+            }
+            true
+        })
+        .collect();
+
+    if filtered.is_empty() {
+        println!("No execution history found.");
+        return Ok(());
+    }
+
+    println!("{}", "Execution History".cyan().bold());
+    println!();
+
+    // Table header
+    println!(
+        "{:<20} {:<15} {:<10} {:<10}",
+        "TIME".bold(),
+        "USER".bold(),
+        "EXIT CODE".bold(),
+        "DURATION".bold()
+    );
+    println!("{}", "─".repeat(60).dimmed());
+
+    for record in filtered.iter().rev().take(20) {
+        let time = record.executed_at.format("%Y-%m-%d %H:%M:%S");
+        let exit_status = if record.exit_code == 0 {
+            record.exit_code.to_string().green()
+        } else {
+            record.exit_code.to_string().red()
+        };
+        let duration = format!("{:.2}s", record.duration_ms as f64 / 1000.0);
+
+        println!(
+            "{:<20} {:<15} {:<10} {:<10}",
+            time.to_string().dimmed(),
+            record.executed_by,
+            exit_status,
+            duration
+        );
+    }
+
+    Ok(())
+}
+
+fn save_execution_record(record: &ExecutionRecord) -> Result<()> {
+    let history_path = Config::history_path()?;
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(history_path)?;
+
+    let json = serde_json::to_string(record)?;
+    writeln!(file, "{}", json)?;
+
+    Ok(())
+}
