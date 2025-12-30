@@ -6,6 +6,7 @@ mod vault;
 mod execution;
 mod auth;
 mod sync;
+mod utils;
 
 fn main() {
     println!("Hello, world!");
