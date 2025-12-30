@@ -89,6 +89,7 @@ impl ScriptLanguage {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_shebang(&self) -> Option<&str> {
         match self {
             Self::Bash => Some("#!/usr/bin/env bash"),
@@ -184,6 +185,7 @@ impl Script {
 }
 
 impl ExecutionRecord {
+    #[allow(dead_code)]
     pub fn was_successful(&self) -> bool {
         self.exit_code == 0
     }

@@ -1,6 +1,5 @@
 use anyhow::Result;
 use colored::*;
-use std::process::Command;
 
 pub fn run_doctor() -> Result<()> {
     println!("{}", "ScriptVault Health Check".cyan().bold());

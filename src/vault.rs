@@ -4,7 +4,7 @@ use crate::context;
 use crate::script::{Script, ScriptLanguage, Visibility};
 use anyhow::{Context as _, Result, anyhow};
 use colored::*;
-use dialoguer::{Input, MultiSelect};
+use dialoguer::Input;
 use std::fs;
 use std::path::Path;
 
@@ -216,7 +216,7 @@ pub fn find_scripts(args: FindArgs) -> Result<()> {
     Ok(())
 }
 
-pub fn list_scripts(args: ListArgs) -> Result<()> {
+pub fn list_scripts(_args: ListArgs) -> Result<()> {
     let scripts = load_scripts_local()?;
 
     println!("{}", "Your Scripts".cyan().bold());

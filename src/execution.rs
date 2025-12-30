@@ -8,7 +8,6 @@ use colored::*;
 use dialoguer::Confirm;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
@@ -118,7 +117,7 @@ pub fn run_script(args: RunArgs) -> Result<()> {
     Ok(())
 }
 
-fn show_script_preview(script: &Script, args: &RunArgs) -> Result<()> {
+fn show_script_preview(script: &Script, _args: &RunArgs) -> Result<()> {
     println!("╭{}╮", "─".repeat(60));
     println!(
         "│ {} {} │",
@@ -147,7 +146,7 @@ fn show_script_preview(script: &Script, args: &RunArgs) -> Result<()> {
 
     let success_rate = script.success_rate();
     if script.metadata.use_count > 0 {
-        let rate_color = if success_rate > 90.0 {
+        let _ate_color = if success_rate > 90.0 {
             "green"
         } else if success_rate > 70.0 {
             "yellow"
@@ -250,7 +249,7 @@ pub fn show_history(args: HistoryArgs) -> Result<()> {
     let filtered: Vec<&ExecutionRecord> = records
         .iter()
         .filter(|r| {
-            if let Some(ref script_name) = args.script {
+            if let Some(ref _script_name) = args.script {
                 // Filter by script name (need to load scripts to match ID to name)
                 // For now, just show all
             }

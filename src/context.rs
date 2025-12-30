@@ -89,7 +89,11 @@ pub fn show_context() -> Result<()> {
             println!("  {}: {}", "Branch".bold(), branch.blue());
         }
     } else {
-        println!("  {}: {}", "Git Repo".bold(), "Not in a git repository".dimmed());
+        println!(
+            "  {}: {}",
+            "Git Repo".bold(),
+            "Not in a git repository".dimmed()
+        );
     }
 
     if !ctx.environment.is_empty() {
