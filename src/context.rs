@@ -60,7 +60,7 @@ fn detect_git_context() -> (Option<String>, Option<String>) {
     (git_repo, git_branch)
 }
 
-fn normalize_git_url(url: &str) -> String {
+pub fn normalize_git_url(url: &str) -> String {
     // Convert git@github.com:user/repo.git to github.com/user/repo
     let url = url
         .trim_start_matches("git@")
