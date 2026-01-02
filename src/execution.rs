@@ -246,16 +246,40 @@ pub fn show_history(args: HistoryArgs) -> Result<()> {
         .filter_map(|line| serde_json::from_str(line).ok())
         .collect();
 
+    // Load scripts to map IDs to names
+    let scripts = load_scripts_local()?;
+    let script_map: std::collections::HashMap<String, String> = scripts
+        .iter()
+        .map(|s| (s.id.clone(), s.name.clone()))
+        .collect();
+
+    // Filter records
     let filtered: Vec<&ExecutionRecord> = records
         .iter()
         .filter(|r| {
-            if let Some(ref _script_name) = args.script {
-                // Filter by script name (need to load scripts to match ID to name)
-                // For now, just show all
+            // Filter by script name if provided
+            if let Some(ref script_name) = args.script {
+                // Try to find the script ID from the name
+                let script_id = scripts
+                    .iter()
+                    .find(|s| s.name == *script_name)
+                    .map(|s| s.id.as_str());
+
+                if let Some(id) = script_id {
+                    if r.script_id != id {
+                        return false;
+                    }
+                } else {
+                    // Script name not found, no matches
+                    return false;
+                }
             }
+
+            // Filter by failed status
             if args.failed && r.exit_code == 0 {
                 return false;
             }
+
             true
         })
         .collect();
@@ -268,28 +292,38 @@ pub fn show_history(args: HistoryArgs) -> Result<()> {
     println!("{}", "Execution History".cyan().bold());
     println!();
 
-    // Table header
+    // Table header with SCRIPT column
     println!(
-        "{:<20} {:<15} {:<10} {:<10}",
+        "{:<20} {:<20} {:<15} {:<10} {:<10}",
         "TIME".bold(),
+        "SCRIPT".bold(),
         "USER".bold(),
         "EXIT CODE".bold(),
         "DURATION".bold()
     );
-    println!("{}", "─".repeat(60).dimmed());
+    println!("{}", "─".repeat(80).dimmed());
 
     for record in filtered.iter().rev().take(20) {
         let time = record.executed_at.format("%Y-%m-%d %H:%M:%S");
+
+        // Get script name from map, or show ID if not found
+        let script_name = script_map
+            .get(&record.script_id)
+            .map(|s| s.as_str())
+            .unwrap_or(&record.script_id);
+
         let exit_status = if record.exit_code == 0 {
             record.exit_code.to_string().green()
         } else {
             record.exit_code.to_string().red()
         };
+
         let duration = format!("{:.2}s", record.duration_ms as f64 / 1000.0);
 
         println!(
-            "{:<20} {:<15} {:<10} {:<10}",
+            "{:<20} {:<20} {:<15} {:<10} {:<10}",
             time.to_string().dimmed(),
+            script_name.yellow(),
             record.executed_by,
             exit_status,
             duration
@@ -298,7 +332,6 @@ pub fn show_history(args: HistoryArgs) -> Result<()> {
 
     Ok(())
 }
-
 fn save_execution_record(record: &ExecutionRecord) -> Result<()> {
     let history_path = Config::history_path()?;
 
