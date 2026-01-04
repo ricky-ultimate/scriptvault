@@ -2,7 +2,7 @@ use crate::cli::{HistoryArgs, RunArgs};
 use crate::config::Config;
 use crate::context;
 use crate::script::{ExecutionRecord, Script};
-use crate::vault::load_scripts_local;
+use crate::vault::{load_scripts_local, update_script_metadata};
 use anyhow::{Result, anyhow};
 use colored::*;
 use dialoguer::Confirm;
@@ -16,10 +16,11 @@ pub fn run_script(args: RunArgs) -> Result<()> {
 
     // Load script from vault
     let scripts = load_scripts_local()?;
-    let script = scripts
+    let mut script = scripts
         .iter()
         .find(|s| s.name == args.script)
-        .ok_or_else(|| anyhow!("Script not found: {}", args.script))?;
+        .ok_or_else(|| anyhow!("Script not found: {}", args.script))?
+        .clone();
 
     // Safety check
     if !script.is_safe() {
@@ -43,7 +44,7 @@ pub fn run_script(args: RunArgs) -> Result<()> {
     }
 
     // Show preview
-    show_script_preview(script, &args)?;
+    show_script_preview(&script, &args)?;
 
     // Confirm execution
     if config.confirm_before_run && !args.ci && !args.dry_run {
@@ -74,7 +75,7 @@ pub fn run_script(args: RunArgs) -> Result<()> {
     println!();
 
     let start = Instant::now();
-    let result = execute_script(script, &args.args)?;
+    let result = execute_script(&script, &args.args)?;
     let duration = start.elapsed();
 
     // Record execution
@@ -96,6 +97,30 @@ pub fn run_script(args: RunArgs) -> Result<()> {
     };
 
     save_execution_record(&execution)?;
+
+    // update script metadata
+    script.metadata.use_count += 1;
+    script.metadata.last_run = Some(execution.executed_at);
+    script.metadata.last_run_by = Some(execution.executed_by.clone());
+
+    if result.exit_code == 0 {
+        script.metadata.success_count += 1;
+    } else {
+        script.metadata.failure_count += 1;
+    }
+
+    // update average runtime
+    if let Some(avg) = script.metadata.avg_runtime_ms {
+        script.metadata.avg_runtime_ms = Some(
+            (avg * (script.metadata.use_count - 1) + duration.as_millis() as u64)
+                / script.metadata.use_count,
+        );
+    } else {
+        script.metadata.avg_runtime_ms = Some(duration.as_millis() as u64);
+    }
+
+    // Save updated script metadata back to vault
+    update_script_metadata(&script)?;
 
     // Show result
     println!();
@@ -332,6 +357,7 @@ pub fn show_history(args: HistoryArgs) -> Result<()> {
 
     Ok(())
 }
+
 fn save_execution_record(record: &ExecutionRecord) -> Result<()> {
     let history_path = Config::history_path()?;
 
