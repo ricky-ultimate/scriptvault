@@ -282,6 +282,24 @@ pub fn show_info(args: InfoArgs) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn update_script_metadata(updated_script: &Script) -> Result<()> {
+    let mut scripts = load_scripts_local().unwrap_or_default();
+
+    // Find and update the script
+    if let Some(script) = scripts.iter_mut().find(|s| s.id == updated_script.id) {
+        *script = updated_script.clone();
+    } else {
+        return Err(anyhow!("Script not found for metadata update"));
+    }
+
+    // Save back to file
+    let scripts_path = Config::scripts_path()?;
+    let json = serde_json::to_string_pretty(&scripts)?;
+    fs::write(scripts_path, json)?;
+
+    Ok(())
+}
+
 pub fn show_stats(_args: StatsArgs) -> Result<()> {
     println!("Stats feature coming soon...");
     Ok(())
