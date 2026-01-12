@@ -1,3 +1,4 @@
+use crate::constants::*;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -89,15 +90,26 @@ impl ScriptLanguage {
         }
     }
 
-    #[allow(dead_code)]
     pub fn get_shebang(&self) -> Option<&str> {
         match self {
-            Self::Bash => Some("#!/usr/bin/env bash"),
-            Self::Shell => Some("#!/bin/sh"),
-            Self::Python => Some("#!/usr/bin/env python3"),
-            Self::Ruby => Some("#!/usr/bin/env ruby"),
-            Self::Perl => Some("#!/usr/bin/env perl"),
+            Self::Bash => Some(BASH_SHEBANG),
+            Self::Shell => Some(SHELL_SHEBANG),
+            Self::Python => Some(PYTHON_SHEBANG),
+            Self::Ruby => Some(RUBY_SHEBANG),
+            Self::Perl => Some(PERL_SHEBANG),
             _ => None,
+        }
+    }
+
+    pub fn get_interpreter(&self) -> &str {
+        match self {
+            Self::Bash => BASH_INTERPRETER,
+            Self::Shell => SHELL_INTERPRETER,
+            Self::Python => PYTHON_INTERPRETER,
+            Self::Ruby => RUBY_INTERPRETER,
+            Self::Perl => PERL_INTERPRETER,
+            Self::PowerShell => POWERSHELL_INTERPRETER,
+            _ => BASH_INTERPRETER,
         }
     }
 }
@@ -131,11 +143,11 @@ impl Script {
             id: uuid::Uuid::new_v4().to_string(),
             name,
             content: content.clone(),
-            version: "v1.0.0".to_string(),
+            version: DEFAULT_VERSION.to_string(),
             language,
             tags: Vec::new(),
             description: None,
-            author: "local".to_string(),
+            author: default_author(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
             context: ScriptContext {
@@ -169,23 +181,13 @@ impl Script {
     }
 
     pub fn is_safe(&self) -> bool {
-        let dangerous_patterns = [
-            "rm -rf /",
-            "rm -rf /*",
-            "mkfs",
-            "dd if=",
-            "> /dev/sda",
-            ":(){ :|:& };:",
-        ];
-
-        !dangerous_patterns
+        !DANGEROUS_PATTERNS
             .iter()
             .any(|pattern| self.content.contains(pattern))
     }
 }
 
 impl ExecutionRecord {
-    #[allow(dead_code)]
     pub fn was_successful(&self) -> bool {
         self.exit_code == 0
     }

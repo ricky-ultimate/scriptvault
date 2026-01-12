@@ -1,3 +1,4 @@
+use crate::constants::*;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -19,7 +20,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            api_endpoint: "https://api.scriptvault.dev".to_string(),
+            api_endpoint: api_endpoint(),
             vault_path: Self::default_vault_path().unwrap_or_default(),
             auth_token: None,
             user_id: None,
@@ -27,7 +28,7 @@ impl Default for Config {
             team_id: None,
             auto_sync: true,
             confirm_before_run: true,
-            default_visibility: "private".to_string(),
+            default_visibility: DEFAULT_VISIBILITY.to_string(),
         }
     }
 }
@@ -61,29 +62,41 @@ impl Config {
     }
 
     pub fn config_path() -> Result<PathBuf> {
-        let home = dirs::home_dir().context("Could not determine home directory")?;
-        Ok(home.join(".scriptvault").join("config.json"))
+        let base = Self::base_dir()?;
+        Ok(base.join(CONFIG_FILE))
     }
 
-    pub fn data_dir() -> Result<PathBuf> {
+    pub fn base_dir() -> Result<PathBuf> {
+        // Check for custom directory via environment variable
+        if let Ok(custom_dir) = std::env::var(ENV_SCRIPTVAULT_HOME) {
+            let path = PathBuf::from(custom_dir);
+            fs::create_dir_all(&path)?;
+            return Ok(path);
+        }
+
+        // Default to ~/.scriptvault
         let home = dirs::home_dir().context("Could not determine home directory")?;
-        let dir = home.join(".scriptvault");
+        let dir = home.join(SCRIPTVAULT_DIR);
         fs::create_dir_all(&dir)?;
         Ok(dir)
     }
 
+    pub fn data_dir() -> Result<PathBuf> {
+        Self::base_dir()
+    }
+
     pub fn vault_dir() -> Result<PathBuf> {
-        let dir = Self::data_dir()?.join("vault");
+        let dir = Self::data_dir()?.join(VAULT_DIR);
         fs::create_dir_all(&dir)?;
         Ok(dir)
     }
 
     pub fn scripts_path() -> Result<PathBuf> {
-        Ok(Self::vault_dir()?.join("scripts.json"))
+        Ok(Self::vault_dir()?.join(SCRIPTS_FILE))
     }
 
     pub fn history_path() -> Result<PathBuf> {
-        Ok(Self::data_dir()?.join("history.jsonl"))
+        Ok(Self::data_dir()?.join(HISTORY_FILE))
     }
 
     fn default_vault_path() -> Result<PathBuf> {

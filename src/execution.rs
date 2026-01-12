@@ -1,11 +1,13 @@
 use crate::cli::{HistoryArgs, RunArgs};
 use crate::config::Config;
+use crate::constants::*;
 use crate::context;
-use crate::script::{ExecutionRecord, Script};
+use crate::script::{ExecutionRecord, Script, ScriptLanguage};
 use crate::vault::{load_scripts_local, update_script_metadata};
 use anyhow::{Result, anyhow};
 use colored::*;
 use dialoguer::Confirm;
+use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -13,6 +15,9 @@ use std::time::Instant;
 
 pub fn run_script(args: RunArgs) -> Result<()> {
     let config = Config::load()?;
+
+    // Check for CI mode from environment variable
+    let ci_mode = args.ci || std::env::var(ENV_SCRIPTVAULT_CI).is_ok();
 
     // Load script from vault
     let scripts = load_scripts_local()?;
@@ -30,7 +35,7 @@ pub fn run_script(args: RunArgs) -> Result<()> {
                 .red()
                 .bold()
         );
-        if !args.ci && !args.dry_run {
+        if !ci_mode && !args.dry_run {
             let proceed = Confirm::new()
                 .with_prompt("Are you sure you want to run this script?")
                 .default(false)
@@ -47,7 +52,7 @@ pub fn run_script(args: RunArgs) -> Result<()> {
     show_script_preview(&script, &args)?;
 
     // Confirm execution
-    if config.confirm_before_run && !args.ci && !args.dry_run {
+    if config.confirm_before_run && !ci_mode && !args.dry_run {
         println!();
         let proceed = Confirm::new()
             .with_prompt("Run this script?")
@@ -84,10 +89,7 @@ pub fn run_script(args: RunArgs) -> Result<()> {
         id: uuid::Uuid::new_v4().to_string(),
         script_id: script.id.clone(),
         script_version: script.version.clone(),
-        executed_by: config
-            .username
-            .clone()
-            .unwrap_or_else(|| "local".to_string()),
+        executed_by: config.username.clone().unwrap_or_else(|| default_author()),
         executed_at: chrono::Utc::now(),
         exit_code: result.exit_code,
         duration_ms: duration.as_millis() as u64,
@@ -197,9 +199,15 @@ struct ExecutionResult {
 }
 
 fn execute_script(script: &Script, args: &[String]) -> Result<ExecutionResult> {
-    // Create a temporary file for the script
-    let temp_dir = std::env::temp_dir();
-    let script_path = temp_dir.join(format!("{}.sh", script.name));
+    // Create a ScriptVault-specific temp directory
+    let temp_dir = std::env::temp_dir().join("scriptvault");
+    fs::create_dir_all(&temp_dir)?;
+
+    let script_path = temp_dir.join(format!(
+        "{}.{}",
+        script.name,
+        get_extension(&script.language)
+    ));
 
     fs::write(&script_path, &script.content)?;
 
@@ -212,20 +220,12 @@ fn execute_script(script: &Script, args: &[String]) -> Result<ExecutionResult> {
         fs::set_permissions(&script_path, perms)?;
     }
 
-    // Determine the interpreter
-    let (interpreter, interpreter_args) = match script.language {
-        crate::script::ScriptLanguage::Bash => ("bash", vec![]),
-        crate::script::ScriptLanguage::Shell => ("sh", vec![]),
-        crate::script::ScriptLanguage::Python => ("python3", vec![]),
-        crate::script::ScriptLanguage::Ruby => ("ruby", vec![]),
-        crate::script::ScriptLanguage::Perl => ("perl", vec![]),
-        crate::script::ScriptLanguage::PowerShell => ("powershell", vec!["-File"]),
-        _ => ("bash", vec![]),
-    };
+    // Get interpreter and args
+    let (interpreter, mut interpreter_args) = get_interpreter_command(&script.language);
 
     // Execute
     let output = Command::new(interpreter)
-        .args(interpreter_args)
+        .args(&interpreter_args)
         .arg(&script_path)
         .args(args)
         .stdout(Stdio::piped())
@@ -257,6 +257,31 @@ fn execute_script(script: &Script, args: &[String]) -> Result<ExecutionResult> {
     })
 }
 
+fn get_interpreter_command(language: &ScriptLanguage) -> (&'static str, Vec<&'static str>) {
+    match language {
+        ScriptLanguage::Bash => (BASH_INTERPRETER, vec![]),
+        ScriptLanguage::Shell => (SHELL_INTERPRETER, vec![]),
+        ScriptLanguage::Python => (PYTHON_INTERPRETER, vec![]),
+        ScriptLanguage::Ruby => (RUBY_INTERPRETER, vec![]),
+        ScriptLanguage::Perl => (PERL_INTERPRETER, vec![]),
+        ScriptLanguage::PowerShell => (POWERSHELL_INTERPRETER, vec!["-File"]),
+        _ => (BASH_INTERPRETER, vec![]),
+    }
+}
+
+fn get_extension(language: &ScriptLanguage) -> &'static str {
+    match language {
+        ScriptLanguage::Bash | ScriptLanguage::Shell => "sh",
+        ScriptLanguage::Python => "py",
+        ScriptLanguage::JavaScript => "js",
+        ScriptLanguage::Ruby => "rb",
+        ScriptLanguage::Perl => "pl",
+        ScriptLanguage::PowerShell => "ps1",
+        ScriptLanguage::Batch => "bat",
+        _ => "sh",
+    }
+}
+
 pub fn show_history(args: HistoryArgs) -> Result<()> {
     let history_path = Config::history_path()?;
 
@@ -273,7 +298,7 @@ pub fn show_history(args: HistoryArgs) -> Result<()> {
 
     // Load scripts to map IDs to names
     let scripts = load_scripts_local()?;
-    let script_map: std::collections::HashMap<String, String> = scripts
+    let script_map: HashMap<String, String> = scripts
         .iter()
         .map(|s| (s.id.clone(), s.name.clone()))
         .collect();
@@ -295,7 +320,6 @@ pub fn show_history(args: HistoryArgs) -> Result<()> {
                         return false;
                     }
                 } else {
-                    // Script name not found, no matches
                     return false;
                 }
             }
@@ -317,7 +341,7 @@ pub fn show_history(args: HistoryArgs) -> Result<()> {
     println!("{}", "Execution History".cyan().bold());
     println!();
 
-    // Table header with SCRIPT column
+    // Table header
     println!(
         "{:<20} {:<20} {:<15} {:<10} {:<10}",
         "TIME".bold(),
@@ -328,10 +352,15 @@ pub fn show_history(args: HistoryArgs) -> Result<()> {
     );
     println!("{}", "─".repeat(80).dimmed());
 
-    for record in filtered.iter().rev().take(20) {
+    let limit = if args.recent {
+        10
+    } else {
+        DEFAULT_HISTORY_LIMIT
+    };
+
+    for record in filtered.iter().rev().take(limit) {
         let time = record.executed_at.format("%Y-%m-%d %H:%M:%S");
 
-        // Get script name from map, or show ID if not found
         let script_name = script_map
             .get(&record.script_id)
             .map(|s| s.as_str())

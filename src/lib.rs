@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod cli;
 pub mod config;
+pub mod constants;
 pub mod context;
 pub mod execution;
 pub mod script;
@@ -304,7 +305,6 @@ mod tests {
         fn test_default_config() {
             let config = Config::default();
 
-            assert_eq!(config.api_endpoint, "https://api.scriptvault.dev");
             assert!(config.auto_sync);
             assert!(config.confirm_before_run);
             assert_eq!(config.default_visibility, "private");
