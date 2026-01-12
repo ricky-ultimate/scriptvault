@@ -1,3 +1,4 @@
+use crate::cli::ExportArgs;
 use crate::cli::*;
 use crate::config::Config;
 use crate::context;
@@ -345,9 +346,192 @@ pub fn recommend_scripts() -> Result<()> {
     Ok(())
 }
 
-pub fn export_scripts(_args: ExportArgs) -> Result<()> {
-    println!("Export feature coming soon...");
+pub fn export_scripts(args: ExportArgs) -> Result<()> {
+    let scripts = load_scripts_local()?;
+
+    if scripts.is_empty() {
+        println!("No scripts to export.");
+        return Ok(());
+    }
+
+    let output = match args.format.to_lowercase().as_str() {
+        "json" => export_json(&scripts)?,
+        "markdown" | "md" => export_markdown(&scripts)?,
+        _ => {
+            return Err(anyhow!(
+                "Unknown export format: '{}'. Supported formats: json, markdown",
+                args.format
+            ));
+        }
+    };
+
+    // Write to file or stdout
+    if let Some(output_file) = args.output {
+        fs::write(&output_file, output)?;
+        println!(
+            "{} Exported {} scripts to: {}",
+            "✓".green().bold(),
+            scripts.len(),
+            output_file.yellow()
+        );
+    } else {
+        println!("{}", output);
+    }
+
     Ok(())
+}
+
+fn export_json(scripts: &[Script]) -> Result<String> {
+    #[derive(serde::Serialize)]
+    struct ExportData {
+        exported_at: String,
+        export_version: String,
+        total_scripts: usize,
+        scripts: Vec<Script>,
+    }
+
+    let data = ExportData {
+        exported_at: chrono::Utc::now().to_rfc3339(),
+        export_version: "1.0".to_string(),
+        total_scripts: scripts.len(),
+        scripts: scripts.to_vec(),
+    };
+
+    Ok(serde_json::to_string_pretty(&data)?)
+}
+
+fn export_markdown(scripts: &[Script]) -> Result<String> {
+    let mut output = String::new();
+
+    // Header
+    output.push_str("# ScriptVault Export\n\n");
+    output.push_str(&format!(
+        "**Exported:** {}\n\n",
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+    ));
+    output.push_str(&format!("**Total Scripts:** {}\n\n", scripts.len()));
+
+    // Table of contents
+    output.push_str("## Table of Contents\n\n");
+    for script in scripts {
+        output.push_str(&format!(
+            "- [{}](#{})\n",
+            script.name,
+            script.name.to_lowercase().replace(' ', "-")
+        ));
+    }
+    output.push_str("\n---\n\n");
+
+    // Individual scripts
+    for script in scripts {
+        output.push_str(&format!("## {}\n\n", script.name));
+
+        // Metadata table
+        output.push_str("| Property | Value |\n");
+        output.push_str("|----------|-------|\n");
+        output.push_str(&format!(
+            "| **Language** | {} |\n",
+            script.language.to_string()
+        ));
+        output.push_str(&format!("| **Version** | {} |\n", script.version));
+        output.push_str(&format!("| **Author** | {} |\n", script.author));
+
+        if !script.tags.is_empty() {
+            output.push_str(&format!("| **Tags** | {} |\n", script.tags.join(", ")));
+        }
+
+        if let Some(desc) = &script.description {
+            output.push_str(&format!("| **Description** | {} |\n", desc));
+        }
+
+        output.push_str(&format!(
+            "| **Created** | {} |\n",
+            script.created_at.format("%Y-%m-%d %H:%M:%S")
+        ));
+
+        // Statistics (if script has been used)
+        if script.metadata.use_count > 0 {
+            output.push_str(&format!("| **Uses** | {} |\n", script.metadata.use_count));
+            output.push_str(&format!(
+                "| **Success Rate** | {:.1}% ({}/{} runs) |\n",
+                script.success_rate(),
+                script.metadata.success_count,
+                script.metadata.use_count
+            ));
+
+            if let Some(avg) = script.metadata.avg_runtime_ms {
+                output.push_str(&format!(
+                    "| **Avg Runtime** | {:.2}s |\n",
+                    avg as f64 / 1000.0
+                ));
+            }
+
+            if let Some(last_run) = script.metadata.last_run {
+                output.push_str(&format!(
+                    "| **Last Run** | {} |\n",
+                    last_run.format("%Y-%m-%d %H:%M:%S")
+                ));
+            }
+        }
+
+        output.push_str("\n");
+
+        // Context (if available)
+        if script.context.directory.is_some()
+            || script.context.git_repo.is_some()
+            || script.context.git_branch.is_some()
+        {
+            output.push_str("### Context\n\n");
+
+            if let Some(dir) = &script.context.directory {
+                output.push_str(&format!("- **Directory:** `{}`\n", dir));
+            }
+            if let Some(repo) = &script.context.git_repo {
+                output.push_str(&format!("- **Git Repo:** `{}`\n", repo));
+            }
+            if let Some(branch) = &script.context.git_branch {
+                output.push_str(&format!("- **Branch:** `{}`\n", branch));
+            }
+            output.push_str("\n");
+        }
+
+        // Script content
+        output.push_str("### Script\n\n");
+        output.push_str(&format!(
+            "```{}\n{}\n```\n\n",
+            script.language.to_string(),
+            script.content
+        ));
+
+        // Command to run
+        output.push_str(&format!("**Run:** `sv run {}`\n\n", script.name));
+
+        output.push_str("---\n\n");
+    }
+
+    // Footer with helpful commands
+    output.push_str("## ScriptVault Commands\n\n");
+    output.push_str("```bash\n");
+    output.push_str("# Find scripts\n");
+    output.push_str("sv find <query>\n");
+    output.push_str("sv find --tag <tag>\n");
+    output.push_str("sv find --here\n\n");
+    output.push_str("# Run scripts\n");
+    output.push_str("sv run <script-name>\n");
+    output.push_str("sv run <script-name> --dry-run\n");
+    output.push_str("sv run <script-name> --verbose\n\n");
+    output.push_str("# View information\n");
+    output.push_str("sv info <script-name>\n");
+    output.push_str("sv history [<script-name>]\n");
+    output.push_str("sv list\n");
+    output.push_str("```\n\n");
+
+    output.push_str(&format!(
+        "*Exported from ScriptVault on {}*\n",
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+    ));
+
+    Ok(output)
 }
 
 // Local storage helpers
