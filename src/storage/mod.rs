@@ -1,4 +1,5 @@
 pub mod local;
+pub mod commands;
 
 use crate::script::Script;
 use anyhow::Result;
