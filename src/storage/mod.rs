@@ -1,5 +1,5 @@
-pub mod local;
 pub mod commands;
+pub mod local;
 
 use crate::script::Script;
 use anyhow::Result;
@@ -11,9 +11,7 @@ use std::path::PathBuf;
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum StorageConfig {
     /// Local filesystem storage (default)
-    Local {
-        path: PathBuf,
-    },
+    Local { path: PathBuf },
     /// Backblaze B2 cloud storage
     Backblaze {
         key_id: String,

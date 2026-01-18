@@ -36,11 +36,7 @@ fn show_storage_status() -> Result<()> {
             if let Some(ep) = endpoint {
                 println!("  {}: {}", "Endpoint".bold(), ep);
             }
-            println!(
-                "  {}: {}",
-                "Status".bold(),
-                "✓ Configured".green()
-            );
+            println!("  {}: {}", "Status".bold(), "✓ Configured".green());
         }
         StorageConfig::S3 { bucket, region, .. } => {
             println!("  {}: {}", "Backend".bold(), "AWS S3".green());
@@ -193,9 +189,7 @@ fn setup_s3_storage() -> Result<()> {
         .with_prompt("AWS Secret Access Key")
         .interact_text()?;
 
-    let bucket: String = Input::new()
-        .with_prompt("S3 Bucket Name")
-        .interact_text()?;
+    let bucket: String = Input::new().with_prompt("S3 Bucket Name").interact_text()?;
 
     let region: String = Input::new()
         .with_prompt("AWS Region")
@@ -226,9 +220,7 @@ fn setup_gcs_storage() -> Result<()> {
     println!("{}", "Setting up Google Cloud Storage".cyan().bold());
     println!();
 
-    let project_id: String = Input::new()
-        .with_prompt("GCP Project ID")
-        .interact_text()?;
+    let project_id: String = Input::new().with_prompt("GCP Project ID").interact_text()?;
 
     let bucket: String = Input::new()
         .with_prompt("GCS Bucket Name")

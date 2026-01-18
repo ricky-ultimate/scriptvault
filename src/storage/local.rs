@@ -14,8 +14,7 @@ impl LocalStorage {
     /// Create a new local storage backend
     pub fn new(vault_path: PathBuf) -> Result<Self> {
         // Ensure vault directory exists
-        fs::create_dir_all(&vault_path)
-            .context("Failed to create vault directory")?;
+        fs::create_dir_all(&vault_path).context("Failed to create vault directory")?;
 
         let scripts_file = vault_path.join("scripts.json");
 
@@ -23,8 +22,7 @@ impl LocalStorage {
         if !scripts_file.exists() {
             let empty_scripts: Vec<Script> = vec![];
             let json = serde_json::to_string_pretty(&empty_scripts)?;
-            fs::write(&scripts_file, json)
-                .context("Failed to initialize scripts file")?;
+            fs::write(&scripts_file, json).context("Failed to initialize scripts file")?;
         }
 
         Ok(Self {
@@ -39,32 +37,27 @@ impl LocalStorage {
             return Ok(Vec::new());
         }
 
-        let contents = fs::read_to_string(&self.scripts_file)
-            .context("Failed to read scripts file")?;
+        let contents =
+            fs::read_to_string(&self.scripts_file).context("Failed to read scripts file")?;
 
-        let scripts: Vec<Script> = serde_json::from_str(&contents)
-            .context("Failed to parse scripts file")?;
+        let scripts: Vec<Script> =
+            serde_json::from_str(&contents).context("Failed to parse scripts file")?;
 
         Ok(scripts)
     }
 
     /// Save all scripts to disk
     fn save_all_scripts(&self, scripts: &[Script]) -> Result<()> {
-        let json = serde_json::to_string_pretty(scripts)
-            .context("Failed to serialize scripts")?;
+        let json = serde_json::to_string_pretty(scripts).context("Failed to serialize scripts")?;
 
-        fs::write(&self.scripts_file, json)
-            .context("Failed to write scripts file")?;
+        fs::write(&self.scripts_file, json).context("Failed to write scripts file")?;
 
         Ok(())
     }
 
     /// Calculate total storage size
     fn calculate_total_size(&self, scripts: &[Script]) -> u64 {
-        scripts
-            .iter()
-            .map(|s| s.metadata.size_bytes as u64)
-            .sum()
+        scripts.iter().map(|s| s.metadata.size_bytes as u64).sum()
     }
 }
 

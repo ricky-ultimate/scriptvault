@@ -56,9 +56,8 @@ pub const DANGEROUS_PATTERNS: &[&str] = &[
 ];
 
 /// Supported script file extensions
-pub const SUPPORTED_EXTENSIONS: &[&str] = &[
-    "sh", "bash", "py", "js", "rb", "pl", "ps1", "bat", "cmd",
-];
+pub const SUPPORTED_EXTENSIONS: &[&str] =
+    &["sh", "bash", "py", "js", "rb", "pl", "ps1", "bat", "cmd"];
 
 /// Environment variable for custom ScriptVault directory
 pub const ENV_SCRIPTVAULT_HOME: &str = "SCRIPTVAULT_HOME";
