@@ -36,6 +36,7 @@ thiserror = "1.0"
 # File system & paths
 dirs = "5.0"
 walkdir = "2.5"
+shellexpand = "3.1"
 
 # Crypto & Security
 sha2 = "0.10"
