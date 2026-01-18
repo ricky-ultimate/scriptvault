@@ -5,6 +5,7 @@ pub mod constants;
 pub mod context;
 pub mod execution;
 pub mod script;
+pub mod storage;
 pub mod sync;
 pub mod utils;
 pub mod vault;
