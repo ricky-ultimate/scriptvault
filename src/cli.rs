@@ -63,6 +63,9 @@ pub enum Command {
     /// Sync with cloud
     Sync,
 
+    /// Manage storage backends
+    Storage(StorageCommand),
+
     /// Check CLI health
     Doctor,
 
@@ -294,4 +297,29 @@ pub struct ExportArgs {
     /// Output file (stdout if not specified)
     #[arg(long, short)]
     pub output: Option<String>,
+}
+
+// New: Storage management commands
+#[derive(Args, Debug)]
+pub struct StorageCommand {
+    #[command(subcommand)]
+    pub action: StorageAction,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum StorageAction {
+    /// Show current storage configuration
+    Status,
+    /// Setup a storage backend
+    Setup(StorageSetupArgs),
+    /// Test storage connection
+    Test,
+    /// Show storage statistics
+    Info,
+}
+
+#[derive(Args, Debug)]
+pub struct StorageSetupArgs {
+    /// Storage backend type (local, backblaze, s3, gcs, azure)
+    pub backend: String,
 }
