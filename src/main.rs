@@ -5,6 +5,7 @@ mod constants;
 mod context;
 mod execution;
 mod script;
+mod storage;
 mod sync;
 mod utils;
 mod vault;
@@ -50,6 +51,9 @@ fn run() -> Result<()> {
         Command::Recommend => vault::recommend_scripts()?,
         Command::Export(args) => vault::export_scripts(args)?,
         Command::Sync => sync::sync_vault()?,
+        Command::Storage(storage_cmd) => {
+            storage::commands::handle_storage_command(storage_cmd.action)?
+        }
         Command::Doctor => utils::run_doctor()?,
         Command::Status => utils::check_status()?,
     }
