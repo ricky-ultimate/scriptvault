@@ -3,6 +3,7 @@ use crate::cli::*;
 use crate::config::Config;
 use crate::context;
 use crate::script::{Script, ScriptLanguage, Visibility};
+use crate::storage::StorageBackend;
 use anyhow::{Context as _, Result, anyhow};
 use colored::*;
 use dialoguer::Input;
@@ -11,6 +12,7 @@ use std::path::Path;
 
 pub fn save_script(args: SaveArgs) -> Result<()> {
     let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
 
     // Read the script file
     let script_path = Path::new(&args.file);
@@ -89,8 +91,8 @@ pub fn save_script(args: SaveArgs) -> Result<()> {
         script.author = username.clone();
     }
 
-    // Save locally
-    save_script_local(&script)?;
+    // Save using storage backend
+    storage.save_script(&script)?;
 
     println!();
     println!(
@@ -108,7 +110,9 @@ pub fn save_script(args: SaveArgs) -> Result<()> {
 }
 
 pub fn find_scripts(args: FindArgs) -> Result<()> {
-    let scripts = load_scripts_local()?;
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
+    let scripts = storage.list_scripts()?;
 
     let current_ctx = if args.here {
         Some(context::detect_context()?)
@@ -218,7 +222,9 @@ pub fn find_scripts(args: FindArgs) -> Result<()> {
 }
 
 pub fn list_scripts(_args: ListArgs) -> Result<()> {
-    let scripts = load_scripts_local()?;
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
+    let scripts = storage.list_scripts()?;
 
     println!("{}", "Your Scripts".cyan().bold());
     println!();
@@ -238,11 +244,9 @@ pub fn list_scripts(_args: ListArgs) -> Result<()> {
 }
 
 pub fn show_info(args: InfoArgs) -> Result<()> {
-    let scripts = load_scripts_local()?;
-    let script = scripts
-        .iter()
-        .find(|s| s.name == args.name)
-        .ok_or_else(|| anyhow!("Script not found: {}", args.name))?;
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
+    let script = storage.load_script_by_name(&args.name)?;
 
     println!("{}", format!("Script: {}", script.name).cyan().bold());
     println!();
@@ -284,21 +288,20 @@ pub fn show_info(args: InfoArgs) -> Result<()> {
 }
 
 pub(crate) fn update_script_metadata(updated_script: &Script) -> Result<()> {
-    let mut scripts = load_scripts_local().unwrap_or_default();
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
 
-    // Find and update the script
-    if let Some(script) = scripts.iter_mut().find(|s| s.id == updated_script.id) {
-        *script = updated_script.clone();
-    } else {
-        return Err(anyhow!("Script not found for metadata update"));
-    }
-
-    // Save back to file
-    let scripts_path = Config::scripts_path()?;
-    let json = serde_json::to_string_pretty(&scripts)?;
-    fs::write(scripts_path, json)?;
+    // Storage backend handles the update
+    storage.save_script(updated_script)?;
 
     Ok(())
+}
+
+// Helper function for backward compatibility
+pub(crate) fn load_scripts_local() -> Result<Vec<Script>> {
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
+    storage.list_scripts()
 }
 
 pub fn show_stats(_args: StatsArgs) -> Result<()> {
@@ -347,7 +350,9 @@ pub fn recommend_scripts() -> Result<()> {
 }
 
 pub fn export_scripts(args: ExportArgs) -> Result<()> {
-    let scripts = load_scripts_local()?;
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
+    let scripts = storage.list_scripts()?;
 
     if scripts.is_empty() {
         println!("No scripts to export.");
@@ -532,33 +537,4 @@ fn export_markdown(scripts: &[Script]) -> Result<String> {
     ));
 
     Ok(output)
-}
-
-// Local storage helpers
-fn save_script_local(script: &Script) -> Result<()> {
-    let mut scripts = load_scripts_local().unwrap_or_default();
-
-    // Remove existing script with same name
-    scripts.retain(|s| s.name != script.name);
-
-    scripts.push(script.clone());
-
-    let scripts_path = Config::scripts_path()?;
-    let json = serde_json::to_string_pretty(&scripts)?;
-    fs::write(scripts_path, json)?;
-
-    Ok(())
-}
-
-pub(crate) fn load_scripts_local() -> Result<Vec<Script>> {
-    let scripts_path = Config::scripts_path()?;
-
-    if !scripts_path.exists() {
-        return Ok(Vec::new());
-    }
-
-    let contents = fs::read_to_string(scripts_path)?;
-    let scripts: Vec<Script> = serde_json::from_str(&contents)?;
-
-    Ok(scripts)
 }
