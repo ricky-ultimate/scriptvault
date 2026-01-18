@@ -1,4 +1,5 @@
 use crate::constants::*;
+use crate::storage::StorageConfig;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -15,6 +16,7 @@ pub struct Config {
     pub auto_sync: bool,
     pub confirm_before_run: bool,
     pub default_visibility: String,
+    pub storage: StorageConfig,
 }
 
 impl Default for Config {
@@ -29,6 +31,7 @@ impl Default for Config {
             auto_sync: true,
             confirm_before_run: true,
             default_visibility: DEFAULT_VISIBILITY.to_string(),
+            storage: StorageConfig::default(),
         }
     }
 }
@@ -39,8 +42,17 @@ impl Config {
 
         if path.exists() {
             let contents = fs::read_to_string(&path).context("Failed to read config file")?;
-            let config: Config =
+            let mut config: Config =
                 serde_json::from_str(&contents).context("Failed to parse config file")?;
+
+            // Migration: if storage field is missing in old config, use default
+            if matches!(config.storage, StorageConfig::Local { .. }) {
+                // Ensure storage path matches vault_path
+                config.storage = StorageConfig::Local {
+                    path: config.vault_path.clone(),
+                };
+            }
+
             Ok(config)
         } else {
             let config = Self::default();
@@ -118,5 +130,37 @@ impl Config {
         self.user_id = None;
         self.username = None;
         self.team_id = None;
+    }
+
+    // New: Get storage backend instance
+    pub fn get_storage_backend(&self) -> Result<Box<dyn crate::storage::StorageBackend>> {
+        crate::storage::create_storage_backend(&self.storage)
+    }
+
+    // New: Update storage configuration
+    pub fn set_storage(&mut self, storage: StorageConfig) -> Result<()> {
+        self.storage = storage;
+        self.save()?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config_has_storage() {
+        let config = Config::default();
+        assert!(matches!(config.storage, StorageConfig::Local { .. }));
+    }
+
+    #[test]
+    fn test_config_serialization_with_storage() {
+        let config = Config::default();
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: Config = serde_json::from_str(&json).unwrap();
+
+        assert!(matches!(deserialized.storage, StorageConfig::Local { .. }));
     }
 }
