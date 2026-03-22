@@ -9,7 +9,7 @@ use colored::*;
 use dialoguer::Confirm;
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Instant;
@@ -109,9 +109,7 @@ pub fn run_script(args: RunArgs) -> Result<()> {
     }
 
     script.metadata.avg_runtime_ms = Some(match script.metadata.avg_runtime_ms {
-        Some(avg) => {
-            (avg * prev_count + duration.as_millis() as u64) / script.metadata.use_count
-        }
+        Some(avg) => (avg * prev_count + duration.as_millis() as u64) / script.metadata.use_count,
         None => duration.as_millis() as u64,
     });
 
@@ -183,11 +181,7 @@ fn execute_script(script: &Script, args: &[String], verbose: bool) -> Result<Exe
     let temp_dir = std::env::temp_dir().join("scriptvault");
     fs::create_dir_all(&temp_dir)?;
 
-    let temp_filename = format!(
-        "{}.{}",
-        uuid::Uuid::new_v4(),
-        get_extension(&script.language)
-    );
+    let temp_filename = format!("{}.{}", uuid::Uuid::new_v4(), script.language.extension());
     let script_path = temp_dir.join(temp_filename);
 
     fs::write(&script_path, &script.content)?;
@@ -211,34 +205,62 @@ fn execute_script(script: &Script, args: &[String], verbose: bool) -> Result<Exe
         println!();
     }
 
-    let output = Command::new(interpreter)
+    let mut child = Command::new(interpreter)
         .args(&interpreter_args)
         .arg(&script_path)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output();
+        .spawn()?;
+
+    let stdout_pipe = child.stdout.take().expect("stdout was piped");
+    let stderr_pipe = child.stderr.take().expect("stderr was piped");
+
+    let stdout_handle = std::thread::spawn(move || {
+        let mut reader = BufReader::new(stdout_pipe);
+        let mut captured = String::new();
+        let mut line = String::new();
+        while reader.read_line(&mut line).unwrap_or(0) > 0 {
+            print!("{}", line);
+            captured.push_str(&line);
+            line.clear();
+        }
+        captured
+    });
+
+    let stderr_handle = std::thread::spawn(move || {
+        let mut reader = BufReader::new(stderr_pipe);
+        let mut captured = String::new();
+        let mut line = String::new();
+        while reader.read_line(&mut line).unwrap_or(0) > 0 {
+            eprint!("{}", line);
+            captured.push_str(&line);
+            line.clear();
+        }
+        captured
+    });
+
+    let status = child.wait()?;
 
     if let Err(e) = fs::remove_file(&script_path) {
         eprintln!("Warning: failed to remove temporary file: {}", e);
     }
 
-    let output = output?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-    if !stdout.is_empty() {
-        print!("{}", stdout);
-    }
-    if !stderr.is_empty() {
-        eprint!("{}", stderr);
-    }
+    let stdout_str = stdout_handle.join().unwrap_or_default();
+    let stderr_str = stderr_handle.join().unwrap_or_default();
 
     Ok(ExecutionResult {
-        exit_code: output.status.code().unwrap_or(1),
-        output: if stdout.is_empty() { None } else { Some(stdout) },
-        error: if stderr.is_empty() { None } else { Some(stderr) },
+        exit_code: status.code().unwrap_or(1),
+        output: if stdout_str.is_empty() {
+            None
+        } else {
+            Some(stdout_str)
+        },
+        error: if stderr_str.is_empty() {
+            None
+        } else {
+            Some(stderr_str)
+        },
     })
 }
 
@@ -251,19 +273,6 @@ fn get_interpreter_command(language: &ScriptLanguage) -> (&'static str, Vec<&'st
         ScriptLanguage::Perl => (PERL_INTERPRETER, vec![]),
         ScriptLanguage::PowerShell => (POWERSHELL_INTERPRETER, vec!["-File"]),
         _ => (BASH_INTERPRETER, vec![]),
-    }
-}
-
-fn get_extension(language: &ScriptLanguage) -> &'static str {
-    match language {
-        ScriptLanguage::Bash | ScriptLanguage::Shell => "sh",
-        ScriptLanguage::Python => "py",
-        ScriptLanguage::JavaScript => "js",
-        ScriptLanguage::Ruby => "rb",
-        ScriptLanguage::Perl => "pl",
-        ScriptLanguage::PowerShell => "ps1",
-        ScriptLanguage::Batch => "bat",
-        _ => "sh",
     }
 }
 
