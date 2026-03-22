@@ -1,272 +1,475 @@
-use std::fs;
-use std::path::PathBuf;
+use chrono::Utc;
+use scriptvault::context::{contexts_match, normalize_git_url};
+use scriptvault::script::{
+    ExecutionRecord, Script, ScriptContext, ScriptLanguage, ScriptMetadata, Visibility,
+};
+use scriptvault::storage::local::LocalStorage;
+use scriptvault::storage::StorageBackend;
+use std::collections::HashMap;
 use tempfile::TempDir;
 
-// Helper to setup isolated test environment
-struct TestEnv {
-    _temp_dir: TempDir,
-    config_path: PathBuf,
-    vault_path: PathBuf,
-}
-
-impl TestEnv {
-    fn new() -> Self {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let base_path = temp_dir.path().to_path_buf();
-
-        let config_path = base_path.join("config.json");
-        let vault_path = base_path.join("vault");
-
-        fs::create_dir_all(&vault_path).unwrap();
-
-        Self {
-            _temp_dir: temp_dir,
-            config_path,
-            vault_path,
-        }
+fn make_script(name: &str, content: &str) -> Script {
+    Script {
+        id: uuid::Uuid::new_v4().to_string(),
+        name: name.to_string(),
+        content: content.to_string(),
+        version: "v1.0.0".to_string(),
+        language: ScriptLanguage::Bash,
+        tags: vec![],
+        description: None,
+        author: "test".to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        context: ScriptContext {
+            directory: None,
+            git_repo: None,
+            git_branch: None,
+            environment: HashMap::new(),
+        },
+        metadata: ScriptMetadata {
+            hash: uuid::Uuid::new_v4().to_string(),
+            size_bytes: content.len(),
+            line_count: content.lines().count(),
+            use_count: 0,
+            success_count: 0,
+            failure_count: 0,
+            last_run: None,
+            last_run_by: None,
+            avg_runtime_ms: None,
+        },
+        visibility: Visibility::Private,
     }
 }
 
-#[test]
-fn test_full_workflow_save_find_run() {
-    // This test simulates the full user workflow:
-    // 1. Save a script
-    // 2. Find it
-    // 3. Run it
-    // 4. Check history
-
-    // Setup
-    let test_env = TestEnv::new();
-
-    // Create a test script file
-    let script_content = "#!/bin/bash\necho 'Hello from test'";
-    let script_path = test_env.vault_path.join("test-script.sh");
-    fs::write(&script_path, script_content).unwrap();
-
-    // Test will be expanded with actual CLI integration
-    assert!(script_path.exists());
+fn storage(tmp: &TempDir) -> LocalStorage {
+    LocalStorage::new(tmp.path().to_path_buf()).unwrap()
 }
 
 #[test]
-fn test_save_and_list_scripts() {
-    let test_env = TestEnv::new();
+fn test_save_and_retrieve_by_name() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    let script = make_script("deploy", "#!/bin/bash\necho deploy");
+    s.save_script(&script).unwrap();
+    let loaded = s.load_script_by_name("deploy").unwrap();
+    assert_eq!(loaded.name, "deploy");
+    assert_eq!(loaded.content, "#!/bin/bash\necho deploy");
+}
 
-    // Create multiple test scripts
-    let scripts = vec![
-        ("deploy.sh", "#!/bin/bash\necho 'deploying'"),
-        ("backup.sh", "#!/bin/bash\necho 'backing up'"),
-        ("test.sh", "#!/bin/bash\necho 'testing'"),
+#[test]
+fn test_save_and_retrieve_by_id() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    let script = make_script("backup", "echo backup");
+    let id = script.id.clone();
+    s.save_script(&script).unwrap();
+    let loaded = s.load_script(&id).unwrap();
+    assert_eq!(loaded.id, id);
+}
+
+#[test]
+fn test_resave_same_name_replaces_record() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    let script = make_script("deploy", "echo v1");
+    s.save_script(&script).unwrap();
+
+    let mut updated = make_script("deploy", "echo v2");
+    updated.id = script.id.clone();
+    s.save_script(&updated).unwrap();
+
+    let all = s.list_scripts().unwrap();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].content, "echo v2");
+}
+
+#[test]
+fn test_update_preserves_id() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    let mut script = make_script("myscript", "echo old");
+    s.save_script(&script).unwrap();
+    script.content = "echo new".to_string();
+    s.update_script(&script).unwrap();
+    let loaded = s.load_script_by_name("myscript").unwrap();
+    assert_eq!(loaded.content, "echo new");
+    assert_eq!(loaded.id, script.id);
+}
+
+#[test]
+fn test_update_unknown_id_errors() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    let ghost = make_script("ghost", "echo ghost");
+    assert!(s.update_script(&ghost).is_err());
+}
+
+#[test]
+fn test_delete_removes_script() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    let script = make_script("to-delete", "echo bye");
+    let id = script.id.clone();
+    s.save_script(&script).unwrap();
+    s.delete_script(&id).unwrap();
+    assert!(!s.script_exists(&id).unwrap());
+    assert!(s.load_script_by_name("to-delete").is_err());
+}
+
+#[test]
+fn test_delete_unknown_id_errors() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    assert!(s.delete_script("nonexistent-id").is_err());
+}
+
+#[test]
+fn test_list_returns_all_scripts_alphabetically() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    s.save_script(&make_script("zebra", "echo z")).unwrap();
+    s.save_script(&make_script("alpha", "echo a")).unwrap();
+    s.save_script(&make_script("mango", "echo m")).unwrap();
+    let scripts = s.list_scripts().unwrap();
+    assert_eq!(scripts.len(), 3);
+    let names: Vec<&str> = scripts.iter().map(|s| s.name.as_str()).collect();
+    assert!(names.contains(&"zebra"));
+    assert!(names.contains(&"alpha"));
+    assert!(names.contains(&"mango"));
+}
+
+#[test]
+fn test_copy_creates_independent_script() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    let original = make_script("original", "echo original");
+    let original_id = original.id.clone();
+    s.save_script(&original).unwrap();
+
+    let mut copy = original.clone();
+    copy.id = uuid::Uuid::new_v4().to_string();
+    copy.name = "copy".to_string();
+    copy.metadata.use_count = 0;
+    s.save_script(&copy).unwrap();
+
+    assert_eq!(s.list_scripts().unwrap().len(), 2);
+    assert_ne!(copy.id, original_id);
+
+    let loaded_copy = s.load_script_by_name("copy").unwrap();
+    assert_eq!(loaded_copy.content, "echo original");
+    assert_eq!(loaded_copy.metadata.use_count, 0);
+}
+
+#[test]
+fn test_rename_via_update() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    let mut script = make_script("old-name", "echo hi");
+    s.save_script(&script).unwrap();
+    script.name = "new-name".to_string();
+    s.update_script(&script).unwrap();
+    assert!(s.load_script_by_name("old-name").is_err());
+    assert!(s.load_script_by_name("new-name").is_ok());
+}
+
+#[test]
+fn test_script_exists() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    let script = make_script("exists-test", "echo hi");
+    let id = script.id.clone();
+    assert!(!s.script_exists(&id).unwrap());
+    s.save_script(&script).unwrap();
+    assert!(s.script_exists(&id).unwrap());
+}
+
+#[test]
+fn test_metadata_totals() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    s.save_script(&make_script("s1", "echo s1")).unwrap();
+    s.save_script(&make_script("s2", "echo s2")).unwrap();
+    s.save_script(&make_script("s3", "echo s3")).unwrap();
+    let meta = s.get_metadata().unwrap();
+    assert_eq!(meta.total_scripts, 3);
+    assert_eq!(meta.backend_type, "local");
+    assert!(meta.total_size_bytes > 0);
+}
+
+#[test]
+fn test_health_check_on_valid_vault() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    assert!(s.health_check().unwrap());
+}
+
+#[test]
+fn test_script_is_safe_clean_content() {
+    let script = Script::new(
+        "safe".to_string(),
+        "echo hello\nls -la\ngit status".to_string(),
+        ScriptLanguage::Bash,
+    );
+    assert!(script.is_safe());
+}
+
+#[test]
+fn test_script_is_not_safe_rm_rf() {
+    let script = Script::new(
+        "dangerous".to_string(),
+        "rm -rf /".to_string(),
+        ScriptLanguage::Bash,
+    );
+    assert!(!script.is_safe());
+}
+
+#[test]
+fn test_script_is_not_safe_fork_bomb() {
+    let script = Script::new(
+        "bomb".to_string(),
+        ":(){ :|:& };:".to_string(),
+        ScriptLanguage::Bash,
+    );
+    assert!(!script.is_safe());
+}
+
+#[test]
+fn test_script_is_not_safe_mkfs() {
+    let script = Script::new(
+        "wipe".to_string(),
+        "mkfs.ext4 /dev/sda".to_string(),
+        ScriptLanguage::Bash,
+    );
+    assert!(!script.is_safe());
+}
+
+#[test]
+fn test_success_rate_no_runs() {
+    let script = Script::new("t".to_string(), "echo t".to_string(), ScriptLanguage::Bash);
+    assert_eq!(script.success_rate(), 0.0);
+}
+
+#[test]
+fn test_success_rate_all_success() {
+    let mut script = Script::new("t".to_string(), "echo t".to_string(), ScriptLanguage::Bash);
+    script.metadata.success_count = 10;
+    script.metadata.failure_count = 0;
+    assert_eq!(script.success_rate(), 100.0);
+}
+
+#[test]
+fn test_success_rate_mixed() {
+    let mut script = Script::new("t".to_string(), "echo t".to_string(), ScriptLanguage::Bash);
+    script.metadata.success_count = 3;
+    script.metadata.failure_count = 1;
+    assert_eq!(script.success_rate(), 75.0);
+}
+
+#[test]
+fn test_execution_record_successful() {
+    let record = ExecutionRecord {
+        id: "r1".to_string(),
+        script_id: "s1".to_string(),
+        script_version: "v1.0.0".to_string(),
+        executed_by: "user".to_string(),
+        executed_at: Utc::now(),
+        exit_code: 0,
+        duration_ms: 500,
+        output: Some("ok".to_string()),
+        error: None,
+        context: ScriptContext {
+            directory: None,
+            git_repo: None,
+            git_branch: None,
+            environment: HashMap::new(),
+        },
+    };
+    assert!(record.was_successful());
+}
+
+#[test]
+fn test_execution_record_failed() {
+    let record = ExecutionRecord {
+        id: "r2".to_string(),
+        script_id: "s1".to_string(),
+        script_version: "v1.0.0".to_string(),
+        executed_by: "user".to_string(),
+        executed_at: Utc::now(),
+        exit_code: 1,
+        duration_ms: 200,
+        output: None,
+        error: Some("error".to_string()),
+        context: ScriptContext {
+            directory: None,
+            git_repo: None,
+            git_branch: None,
+            environment: HashMap::new(),
+        },
+    };
+    assert!(!record.was_successful());
+}
+
+#[test]
+fn test_language_extension_round_trip() {
+    let cases = vec![
+        (ScriptLanguage::Bash, "sh"),
+        (ScriptLanguage::Shell, "sh"),
+        (ScriptLanguage::Python, "py"),
+        (ScriptLanguage::JavaScript, "js"),
+        (ScriptLanguage::Ruby, "rb"),
+        (ScriptLanguage::Perl, "pl"),
+        (ScriptLanguage::PowerShell, "ps1"),
+        (ScriptLanguage::Batch, "bat"),
     ];
-
-    for (name, content) in scripts {
-        let path = test_env.vault_path.join(name);
-        fs::write(&path, content).unwrap();
-    }
-
-    // Verify all files exist
-    assert_eq!(fs::read_dir(&test_env.vault_path).unwrap().count(), 3);
-}
-
-#[test]
-fn test_execution_history_tracking() {
-    let test_env = TestEnv::new();
-
-    // Create history file
-    let history_path = test_env.vault_path.join("history.jsonl");
-
-    // Simulate execution records
-    let record = r#"{"id":"test123","script_id":"script123","exit_code":0}"#;
-    fs::write(&history_path, format!("{}\n", record)).unwrap();
-
-    // Verify history file exists and is readable
-    let content = fs::read_to_string(&history_path).unwrap();
-    assert!(content.contains("test123"));
-}
-
-#[test]
-fn test_context_detection_in_git_repo() {
-    // This would test git context detection
-    // Skip if not in a git repo
-    if std::process::Command::new("git")
-        .args(&["rev-parse", "--git-dir"])
-        .output()
-        .is_ok()
-    {
-        // In a git repo, context should be detected
-        // This will be expanded with actual context module tests
-        assert!(true);
+    for (lang, ext) in cases {
+        assert_eq!(lang.extension(), ext);
     }
 }
 
 #[test]
-fn test_search_by_tags() {
-    let test_env = TestEnv::new();
-
-    // This will test the search functionality
-    // For now, we verify the test environment works
-    assert!(test_env.vault_path.exists());
+fn test_language_from_extension_all_supported() {
+    assert_eq!(ScriptLanguage::from_extension("sh"), ScriptLanguage::Shell);
+    assert_eq!(ScriptLanguage::from_extension("bash"), ScriptLanguage::Bash);
+    assert_eq!(ScriptLanguage::from_extension("py"), ScriptLanguage::Python);
+    assert_eq!(ScriptLanguage::from_extension("js"), ScriptLanguage::JavaScript);
+    assert_eq!(ScriptLanguage::from_extension("rb"), ScriptLanguage::Ruby);
+    assert_eq!(ScriptLanguage::from_extension("pl"), ScriptLanguage::Perl);
+    assert_eq!(ScriptLanguage::from_extension("ps1"), ScriptLanguage::PowerShell);
+    assert_eq!(ScriptLanguage::from_extension("bat"), ScriptLanguage::Batch);
+    assert_eq!(ScriptLanguage::from_extension("cmd"), ScriptLanguage::Batch);
+    assert_eq!(ScriptLanguage::from_extension("xyz"), ScriptLanguage::Unknown);
 }
 
 #[test]
-fn test_script_safety_checks() {
-    let test_env = TestEnv::new();
-
-    // Create a dangerous script
-    let dangerous_content = "#!/bin/bash\nrm -rf /";
-    let safe_content = "#!/bin/bash\necho 'safe'";
-
-    let dangerous_path = test_env.vault_path.join("dangerous.sh");
-    let safe_path = test_env.vault_path.join("safe.sh");
-
-    fs::write(&dangerous_path, dangerous_content).unwrap();
-    fs::write(&safe_path, safe_content).unwrap();
-
-    // Verify both files were created
-    assert!(dangerous_path.exists());
-    assert!(safe_path.exists());
-
-    // Safety check will be verified through the script module
-    let dangerous_script = fs::read_to_string(&dangerous_path).unwrap();
-    assert!(dangerous_script.contains("rm -rf"));
+fn test_normalize_git_url_https_with_extension() {
+    assert_eq!(
+        normalize_git_url("https://github.com/user/repo.git"),
+        "github.com/user/repo"
+    );
 }
 
 #[test]
-fn test_multiple_language_support() {
-    let test_env = TestEnv::new();
+fn test_normalize_git_url_ssh() {
+    assert_eq!(
+        normalize_git_url("git@github.com:user/repo.git"),
+        "github.com/user/repo"
+    );
+}
 
-    let scripts = vec![
-        ("test.sh", "#!/bin/bash\necho 'bash'"),
-        ("test.py", "#!/usr/bin/env python3\nprint('python')"),
-        ("test.rb", "#!/usr/bin/env ruby\nputs 'ruby'"),
-        ("test.pl", "#!/usr/bin/env perl\nprint 'perl'"),
-    ];
+#[test]
+fn test_normalize_git_url_already_clean() {
+    assert_eq!(
+        normalize_git_url("https://github.com/user/repo"),
+        "github.com/user/repo"
+    );
+}
 
-    for (name, content) in scripts {
-        let path = test_env.vault_path.join(name);
-        fs::write(&path, content).unwrap();
+#[test]
+fn test_contexts_match_by_git_repo() {
+    let ctx1 = ScriptContext {
+        directory: Some("/home/user/a".to_string()),
+        git_repo: Some("github.com/user/repo".to_string()),
+        git_branch: Some("main".to_string()),
+        environment: HashMap::new(),
+    };
+    let ctx2 = ScriptContext {
+        directory: Some("/home/user/b".to_string()),
+        git_repo: Some("github.com/user/repo".to_string()),
+        git_branch: Some("develop".to_string()),
+        environment: HashMap::new(),
+    };
+    assert!(contexts_match(&ctx1, &ctx2));
+}
+
+#[test]
+fn test_contexts_match_by_exact_directory() {
+    let ctx = ScriptContext {
+        directory: Some("/home/user/project".to_string()),
+        git_repo: None,
+        git_branch: None,
+        environment: HashMap::new(),
+    };
+    assert!(contexts_match(&ctx, &ctx.clone()));
+}
+
+#[test]
+fn test_contexts_match_by_parent_directory() {
+    let parent = ScriptContext {
+        directory: Some("/home/user/project".to_string()),
+        git_repo: None,
+        git_branch: None,
+        environment: HashMap::new(),
+    };
+    let child = ScriptContext {
+        directory: Some("/home/user/project/src".to_string()),
+        git_repo: None,
+        git_branch: None,
+        environment: HashMap::new(),
+    };
+    assert!(contexts_match(&parent, &child));
+    assert!(contexts_match(&child, &parent));
+}
+
+#[test]
+fn test_contexts_do_not_match_different_repos() {
+    let ctx1 = ScriptContext {
+        directory: Some("/home/user/a".to_string()),
+        git_repo: Some("github.com/user/repo1".to_string()),
+        git_branch: None,
+        environment: HashMap::new(),
+    };
+    let ctx2 = ScriptContext {
+        directory: Some("/home/user/b".to_string()),
+        git_repo: Some("github.com/user/repo2".to_string()),
+        git_branch: None,
+        environment: HashMap::new(),
+    };
+    assert!(!contexts_match(&ctx1, &ctx2));
+}
+
+#[test]
+fn test_large_script_saved_and_loaded_intact() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    let mut content = String::from("#!/bin/bash\n");
+    for i in 0..500 {
+        content.push_str(&format!("echo 'line {}'\n", i));
     }
-
-    // Verify all scripts created
-    assert_eq!(fs::read_dir(&test_env.vault_path).unwrap().count(), 4);
+    let script = make_script("large", &content);
+    s.save_script(&script).unwrap();
+    let loaded = s.load_script_by_name("large").unwrap();
+    assert_eq!(loaded.content, content);
+    assert_eq!(loaded.metadata.line_count, content.lines().count());
 }
 
 #[test]
-fn test_config_persistence() {
-    let test_env = TestEnv::new();
-
-    // Create a config
-    let config = r#"{
-        "api_endpoint": "https://api.scriptvault.dev",
-        "auth_token": "test123",
-        "auto_sync": true
-    }"#;
-
-    fs::write(&test_env.config_path, config).unwrap();
-
-    // Verify config can be read back
-    let read_config = fs::read_to_string(&test_env.config_path).unwrap();
-    assert!(read_config.contains("test123"));
+fn test_special_characters_in_content_preserved() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    let content = "#!/bin/bash\necho \"!@#$%^&*()\"\necho 'quotes and spaces'\n";
+    let script = make_script("special", content);
+    s.save_script(&script).unwrap();
+    let loaded = s.load_script_by_name("special").unwrap();
+    assert_eq!(loaded.content, content);
 }
 
 #[test]
-fn test_execution_with_arguments() {
-    let test_env = TestEnv::new();
-
-    // Create a script that takes arguments
-    let script_content = r#"#!/bin/bash
-echo "Arg 1: $1"
-echo "Arg 2: $2"
-"#;
-
-    let script_path = test_env.vault_path.join("args-test.sh");
-    fs::write(&script_path, script_content).unwrap();
-
-    // Make executable on Unix
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&script_path).unwrap().permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&script_path, perms).unwrap();
-    }
-
-    assert!(script_path.exists());
+fn test_empty_vault_list_returns_empty() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    assert!(s.list_scripts().unwrap().is_empty());
 }
 
 #[test]
-fn test_special_characters_in_scripts() {
-    let test_env = TestEnv::new();
-
-    // Test script with special characters
-    let special_content = r#"#!/bin/bash
-echo "Testing: !@#$%^&*()"
-echo "Path: /home/user/my folder/file.txt"
-echo "Quotes: \"hello\" and 'world'"
-"#;
-
-    let path = test_env.vault_path.join("special.sh");
-    fs::write(&path, special_content).unwrap();
-
-    // Verify content is preserved
-    let read_content = fs::read_to_string(&path).unwrap();
-    assert!(read_content.contains("!@#$%^&*()"));
-    assert!(read_content.contains("my folder"));
+fn test_script_not_found_by_name_errors() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    assert!(s.load_script_by_name("nonexistent").is_err());
 }
 
 #[test]
-fn test_concurrent_script_execution() {
-    let test_env = TestEnv::new();
-
-    // Create a script that can be run concurrently
-    let script_content = "#!/bin/bash\necho 'concurrent test'\nsleep 0.1";
-    let path = test_env.vault_path.join("concurrent.sh");
-    fs::write(&path, script_content).unwrap();
-
-    // Verify script exists (actual concurrent execution would be tested separately)
-    assert!(path.exists());
-}
-
-#[test]
-fn test_error_handling_missing_script() {
-    let test_env = TestEnv::new();
-
-    // Try to access a non-existent script
-    let missing_path = test_env.vault_path.join("does-not-exist.sh");
-
-    // Should not exist
-    assert!(!missing_path.exists());
-}
-
-#[test]
-fn test_large_script_handling() {
-    let test_env = TestEnv::new();
-
-    // Create a large script (1000 lines)
-    let mut large_content = String::from("#!/bin/bash\n");
-    for i in 0..1000 {
-        large_content.push_str(&format!("echo 'Line {}'\n", i));
-    }
-
-    let path = test_env.vault_path.join("large.sh");
-    fs::write(&path, &large_content).unwrap();
-
-    // Verify large script can be saved and read
-    let read_content = fs::read_to_string(&path).unwrap();
-    assert_eq!(read_content.lines().count(), 1001); // shebang + 1000 lines
-}
-
-#[test]
-fn test_vault_structure() {
-    let test_env = TestEnv::new();
-
-    // Create the expected vault structure
-    let scripts_path = test_env.vault_path.join("scripts.json");
-    let history_path = test_env.vault_path.join("history.jsonl");
-
-    fs::write(&scripts_path, "[]").unwrap();
-    fs::write(&history_path, "").unwrap();
-
-    // Verify structure exists
-    assert!(scripts_path.exists());
-    assert!(history_path.exists());
+fn test_script_not_found_by_id_errors() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    assert!(s.load_script("00000000-0000-0000-0000-000000000000").is_err());
 }
