@@ -22,6 +22,7 @@ pub enum Command {
     Cat(CatArgs),
     Edit(EditArgs),
     Rename(RenameArgs),
+    Copy(CopyArgs),
     History(HistoryArgs),
     Stats(StatsArgs),
     Versions(VersionArgs),
@@ -62,6 +63,9 @@ pub struct SaveArgs {
     pub file: String,
 
     #[arg(long)]
+    pub name: Option<String>,
+
+    #[arg(long)]
     pub tags: Option<String>,
 
     #[arg(long)]
@@ -89,6 +93,9 @@ pub struct FindArgs {
 
     #[arg(long)]
     pub git_repo: Option<String>,
+
+    #[arg(long)]
+    pub recent: bool,
 }
 
 #[derive(Args, Debug)]
@@ -98,6 +105,9 @@ pub struct ListArgs {
 
     #[arg(long)]
     pub team: bool,
+
+    #[arg(long)]
+    pub recent: bool,
 }
 
 #[derive(Args, Debug)]
@@ -149,6 +159,12 @@ pub struct EditArgs {
 pub struct RenameArgs {
     pub old_name: String,
     pub new_name: String,
+}
+
+#[derive(Args, Debug)]
+pub struct CopyArgs {
+    pub source: String,
+    pub dest: String,
 }
 
 #[derive(Args, Debug)]
