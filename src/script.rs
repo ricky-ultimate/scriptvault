@@ -77,6 +77,19 @@ impl ScriptLanguage {
         }
     }
 
+    pub fn extension(&self) -> &str {
+        match self {
+            Self::Bash | Self::Shell => "sh",
+            Self::Python => "py",
+            Self::JavaScript => "js",
+            Self::Ruby => "rb",
+            Self::Perl => "pl",
+            Self::PowerShell => "ps1",
+            Self::Batch => "bat",
+            Self::Unknown => "sh",
+        }
+    }
+
     pub fn get_shebang(&self) -> Option<&str> {
         match self {
             Self::Bash => Some(BASH_SHEBANG),
