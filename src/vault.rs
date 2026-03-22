@@ -23,11 +23,13 @@ pub fn save_script(args: SaveArgs) -> Result<()> {
 
     let content = fs::read_to_string(script_path).context("Failed to read script file")?;
 
-    let name = script_path
+    let derived_name = script_path
         .file_stem()
         .and_then(|s| s.to_str())
         .ok_or_else(|| anyhow!("Invalid script filename"))?
         .to_string();
+
+    let name = args.name.clone().unwrap_or(derived_name);
 
     let extension = script_path
         .extension()
@@ -132,7 +134,7 @@ pub fn find_scripts(args: FindArgs) -> Result<()> {
         None
     };
 
-    let filtered: Vec<&Script> = scripts
+    let mut filtered: Vec<&Script> = scripts
         .iter()
         .filter(|s| {
             if let Some(ref query) = args.query {
@@ -179,6 +181,12 @@ pub fn find_scripts(args: FindArgs) -> Result<()> {
             true
         })
         .collect();
+
+    if args.recent {
+        filtered.sort_by(|a, b| b.metadata.last_run.cmp(&a.metadata.last_run));
+    } else {
+        filtered.sort_by(|a, b| a.name.cmp(&b.name));
+    }
 
     if filtered.is_empty() {
         println!("No scripts found matching your criteria.");
@@ -228,14 +236,20 @@ pub fn find_scripts(args: FindArgs) -> Result<()> {
     Ok(())
 }
 
-pub fn list_scripts(_args: ListArgs) -> Result<()> {
+pub fn list_scripts(args: ListArgs) -> Result<()> {
     let config = Config::load()?;
     let storage = config.get_storage_backend()?;
-    let scripts = storage.list_scripts()?;
+    let mut scripts = storage.list_scripts()?;
 
     if scripts.is_empty() {
         println!("No scripts saved yet.");
         return Ok(());
+    }
+
+    if args.recent {
+        scripts.sort_by(|a, b| b.metadata.last_run.cmp(&a.metadata.last_run));
+    } else {
+        scripts.sort_by(|a, b| a.name.cmp(&b.name));
     }
 
     println!("{}", "Scripts".cyan().bold());
@@ -403,13 +417,14 @@ pub fn edit_script(args: EditArgs) -> Result<()> {
         .args(&editor_args)
         .arg(&temp_path)
         .status()
-        .map_err(|e| anyhow!("Failed to open editor '{}': {}", editor_cmd, e))?;
+        .map_err(|e| {
+            let _ = fs::remove_file(&temp_path);
+            anyhow!("Failed to open editor '{}': {}", editor_cmd, e)
+        })?;
 
-    let new_content = fs::read_to_string(&temp_path).context("Failed to read edited file")?;
-
-    if let Err(e) = fs::remove_file(&temp_path) {
-        eprintln!("Warning: failed to remove temporary file: {}", e);
-    }
+    let read_result = fs::read_to_string(&temp_path);
+    let _ = fs::remove_file(&temp_path);
+    let new_content = read_result.context("Failed to read edited file")?;
 
     if !status.success() {
         println!("Edit cancelled");
@@ -464,6 +479,45 @@ pub fn rename_script(args: RenameArgs) -> Result<()> {
         "✓".green().bold(),
         old_name.yellow(),
         args.new_name.yellow()
+    );
+
+    Ok(())
+}
+
+pub fn copy_script(args: CopyArgs) -> Result<()> {
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
+
+    let source = storage
+        .load_script_by_name(&args.source)
+        .map_err(|_| anyhow!("Script not found: {}", args.source))?;
+
+    if storage.load_script_by_name(&args.dest).is_ok() {
+        return Err(anyhow!(
+            "A script named '{}' already exists",
+            args.dest
+        ));
+    }
+
+    let mut copy = source.clone();
+    copy.id = uuid::Uuid::new_v4().to_string();
+    copy.name = args.dest.clone();
+    copy.created_at = Utc::now();
+    copy.updated_at = Utc::now();
+    copy.metadata.use_count = 0;
+    copy.metadata.success_count = 0;
+    copy.metadata.failure_count = 0;
+    copy.metadata.last_run = None;
+    copy.metadata.last_run_by = None;
+    copy.metadata.avg_runtime_ms = None;
+
+    storage.save_script(&copy)?;
+
+    println!(
+        "{} Copied: {} -> {}",
+        "✓".green().bold(),
+        args.source.yellow(),
+        args.dest.yellow()
     );
 
     Ok(())
