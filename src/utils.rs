@@ -28,6 +28,31 @@ pub fn run_doctor() -> Result<()> {
         }
     }
 
+    print!("  editor ($EDITOR)... ");
+    let editor = std::env::var("EDITOR")
+        .or_else(|_| std::env::var("VISUAL"))
+        .unwrap_or_default();
+
+    if editor.is_empty() {
+        print!("not set, checking fallback... ");
+        if which::which("vi").is_ok() {
+            println!("{}", "vi available".yellow());
+        } else {
+            println!("{}", "no editor found".red());
+        }
+    } else {
+        let editor_bin = editor.split_whitespace().next().unwrap_or(&editor);
+        if which::which(editor_bin).is_ok() {
+            println!("{} ({})", "✓".green(), editor_bin);
+        } else {
+            println!(
+                "{} ({} not found in PATH)",
+                "not found".red(),
+                editor_bin
+            );
+        }
+    }
+
     println!();
     println!("{}", "Health check complete".green().bold());
     Ok(())
