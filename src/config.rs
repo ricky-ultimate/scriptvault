@@ -21,17 +21,20 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
+        let vault_path = Self::default_vault_path().unwrap_or_default();
         Self {
             api_endpoint: api_endpoint(),
-            vault_path: Self::default_vault_path().unwrap_or_default(),
+            storage: StorageConfig {
+                path: vault_path.clone(),
+            },
+            vault_path,
             auth_token: None,
             user_id: None,
             username: None,
             team_id: None,
-            auto_sync: true,
+            auto_sync: false,
             confirm_before_run: true,
             default_visibility: DEFAULT_VISIBILITY.to_string(),
-            storage: StorageConfig::default(),
         }
     }
 }
@@ -42,17 +45,8 @@ impl Config {
 
         if path.exists() {
             let contents = fs::read_to_string(&path).context("Failed to read config file")?;
-            let mut config: Config =
+            let config: Config =
                 serde_json::from_str(&contents).context("Failed to parse config file")?;
-
-            // Migration: if storage field is missing in old config, use default
-            if matches!(config.storage, StorageConfig::Local { .. }) {
-                // Ensure storage path matches vault_path
-                config.storage = StorageConfig::Local {
-                    path: config.vault_path.clone(),
-                };
-            }
-
             Ok(config)
         } else {
             let config = Self::default();
@@ -64,29 +58,22 @@ impl Config {
     pub fn save(&self) -> Result<()> {
         let path = Self::config_path()?;
         let dir = path.parent().unwrap();
-
         fs::create_dir_all(dir)?;
-
         let contents = serde_json::to_string_pretty(self)?;
         fs::write(&path, contents)?;
-
         Ok(())
     }
 
     pub fn config_path() -> Result<PathBuf> {
-        let base = Self::base_dir()?;
-        Ok(base.join(CONFIG_FILE))
+        Ok(Self::base_dir()?.join(CONFIG_FILE))
     }
 
     pub fn base_dir() -> Result<PathBuf> {
-        // Check for custom directory via environment variable
         if let Ok(custom_dir) = std::env::var(ENV_SCRIPTVAULT_HOME) {
             let path = PathBuf::from(custom_dir);
             fs::create_dir_all(&path)?;
             return Ok(path);
         }
-
-        // Default to ~/.scriptvault
         let home = dirs::home_dir().context("Could not determine home directory")?;
         let dir = home.join(SCRIPTVAULT_DIR);
         fs::create_dir_all(&dir)?;
@@ -132,13 +119,12 @@ impl Config {
         self.team_id = None;
     }
 
-    // New: Get storage backend instance
     pub fn get_storage_backend(&self) -> Result<Box<dyn crate::storage::StorageBackend>> {
         crate::storage::create_storage_backend(&self.storage)
     }
 
-    // New: Update storage configuration
     pub fn set_storage(&mut self, storage: StorageConfig) -> Result<()> {
+        self.vault_path = storage.path.clone();
         self.storage = storage;
         self.save()?;
         Ok(())
@@ -150,17 +136,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_default_config_has_storage() {
+    fn test_default_config() {
         let config = Config::default();
-        assert!(matches!(config.storage, StorageConfig::Local { .. }));
+        assert!(!config.auto_sync);
+        assert!(config.confirm_before_run);
+        assert_eq!(config.default_visibility, "private");
+        assert!(config.auth_token.is_none());
+        assert!(config.user_id.is_none());
     }
 
     #[test]
-    fn test_config_serialization_with_storage() {
+    fn test_is_authenticated_false() {
         let config = Config::default();
-        let json = serde_json::to_string(&config).unwrap();
-        let deserialized: Config = serde_json::from_str(&json).unwrap();
+        assert!(!config.is_authenticated());
+    }
 
-        assert!(matches!(deserialized.storage, StorageConfig::Local { .. }));
+    #[test]
+    fn test_is_authenticated_true() {
+        let mut config = Config::default();
+        config.set_auth(
+            "token123".to_string(),
+            "user123".to_string(),
+            "TestUser".to_string(),
+        );
+        assert!(config.is_authenticated());
+        assert_eq!(config.auth_token, Some("token123".to_string()));
+        assert_eq!(config.user_id, Some("user123".to_string()));
+        assert_eq!(config.username, Some("TestUser".to_string()));
+    }
+
+    #[test]
+    fn test_clear_auth() {
+        let mut config = Config::default();
+        config.set_auth(
+            "token123".to_string(),
+            "user123".to_string(),
+            "TestUser".to_string(),
+        );
+        config.clear_auth();
+        assert!(!config.is_authenticated());
+        assert!(config.auth_token.is_none());
+        assert!(config.user_id.is_none());
+        assert!(config.username.is_none());
     }
 }

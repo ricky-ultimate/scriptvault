@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::context;
 use crate::script::{Script, ScriptLanguage, Visibility};
 use crate::storage::StorageBackend;
-use anyhow::{Context as _, Result, anyhow};
+use anyhow::{anyhow, Context as _, Result};
 use colored::*;
 use dialoguer::Input;
 use std::fs;
@@ -14,7 +14,6 @@ pub fn save_script(args: SaveArgs) -> Result<()> {
     let config = Config::load()?;
     let storage = config.get_storage_backend()?;
 
-    // Read the script file
     let script_path = Path::new(&args.file);
     if !script_path.exists() {
         return Err(anyhow!("Script file not found: {}", args.file));
@@ -34,14 +33,10 @@ pub fn save_script(args: SaveArgs) -> Result<()> {
         .unwrap_or("sh");
 
     let language = ScriptLanguage::from_extension(extension);
+    let mut script = Script::new(name, content, language);
 
-    let mut script = Script::new(name.clone(), content, language);
+    script.context = context::detect_context()?;
 
-    // Detect context
-    let ctx = context::detect_context()?;
-    script.context = ctx;
-
-    // Interactive prompts (unless --yes)
     if !args.yes {
         println!("{}", "Saving script to vault...".cyan().bold());
         println!();
@@ -54,7 +49,6 @@ pub fn save_script(args: SaveArgs) -> Result<()> {
         }
         println!();
 
-        // Get tags
         let tags_input: String = if let Some(tags) = args.tags {
             tags
         } else {
@@ -68,8 +62,7 @@ pub fn save_script(args: SaveArgs) -> Result<()> {
             .map(|s| s.to_string())
             .collect();
 
-        // Get description
-        let description = if let Some(desc) = args.description {
+        script.description = if let Some(desc) = args.description {
             Some(desc)
         } else {
             let desc: String = Input::new()
@@ -78,7 +71,6 @@ pub fn save_script(args: SaveArgs) -> Result<()> {
                 .interact_text()?;
             if desc.is_empty() { None } else { Some(desc) }
         };
-        script.description = description;
     } else {
         if let Some(tags) = args.tags {
             script.tags = tags.split_whitespace().map(|s| s.to_string()).collect();
@@ -86,17 +78,15 @@ pub fn save_script(args: SaveArgs) -> Result<()> {
         script.description = args.description;
     }
 
-    // Set author from config
     if let Some(username) = &config.username {
         script.author = username.clone();
     }
 
-    // Save using storage backend
     storage.save_script(&script)?;
 
     println!();
     println!(
-        "{} Script saved: {} {}",
+        "{} Saved: {} {}",
         "✓".green().bold(),
         script.name.yellow(),
         script.version.dimmed()
@@ -123,49 +113,45 @@ pub fn find_scripts(args: FindArgs) -> Result<()> {
     let filtered: Vec<&Script> = scripts
         .iter()
         .filter(|s| {
-            // Filter by query
             if let Some(ref query) = args.query {
-                let query_lower = query.to_lowercase();
-                let matches_name = s.name.to_lowercase().contains(&query_lower);
-                let matches_desc = s
-                    .description
-                    .as_ref()
-                    .map(|d| d.to_lowercase().contains(&query_lower))
-                    .unwrap_or(false);
-                let matches_tags = s
-                    .tags
-                    .iter()
-                    .any(|t| t.to_lowercase().contains(&query_lower));
-
-                if !(matches_name || matches_desc || matches_tags) {
+                let q = query.to_lowercase();
+                let matches = s.name.to_lowercase().contains(&q)
+                    || s.description
+                        .as_ref()
+                        .map(|d| d.to_lowercase().contains(&q))
+                        .unwrap_or(false)
+                    || s.tags.iter().any(|t| t.to_lowercase().contains(&q));
+                if !matches {
                     return false;
                 }
             }
 
-            // Filter by context
             if let Some(ref ctx) = current_ctx {
                 if !context::contexts_match(&s.context, ctx) {
                     return false;
                 }
             }
 
-            // Filter by tag
             if let Some(ref tag) = args.tag {
                 if !s.tags.iter().any(|t| t == tag) {
                     return false;
                 }
             }
 
-            // Filter by language
             if let Some(ref lang) = args.language {
-                if s.language.to_string() != lang {
+                if s.language.to_string() != *lang {
                     return false;
                 }
             }
 
-            // Filter by visibility
             if args.team && s.visibility != Visibility::Team {
                 return false;
+            }
+
+            if let Some(ref repo) = args.git_repo {
+                if s.context.git_repo.as_deref() != Some(repo.as_str()) {
+                    return false;
+                }
             }
 
             true
@@ -177,10 +163,8 @@ pub fn find_scripts(args: FindArgs) -> Result<()> {
         return Ok(());
     }
 
-    println!("{}", "Scripts matching your search:".cyan().bold());
+    println!("{}", "Scripts".cyan().bold());
     println!();
-
-    // Table header
     println!(
         "{:<30} {:<10} {:<8} {:<20}",
         "NAME".bold(),
@@ -191,17 +175,18 @@ pub fn find_scripts(args: FindArgs) -> Result<()> {
     println!("{}", "─".repeat(70).dimmed());
 
     for script in filtered.iter().take(20) {
-        let last_run = if let Some(run) = script.metadata.last_run {
-            let duration = chrono::Utc::now() - run;
-            if duration.num_days() > 0 {
-                format!("{} days ago", duration.num_days())
-            } else if duration.num_hours() > 0 {
-                format!("{} hours ago", duration.num_hours())
-            } else {
-                format!("{} minutes ago", duration.num_minutes())
+        let last_run = match script.metadata.last_run {
+            Some(run) => {
+                let delta = chrono::Utc::now() - run;
+                if delta.num_days() > 0 {
+                    format!("{} days ago", delta.num_days())
+                } else if delta.num_hours() > 0 {
+                    format!("{} hours ago", delta.num_hours())
+                } else {
+                    format!("{} minutes ago", delta.num_minutes())
+                }
             }
-        } else {
-            "Never".dimmed().to_string()
+            None => "Never".dimmed().to_string(),
         };
 
         println!(
@@ -226,10 +211,15 @@ pub fn list_scripts(_args: ListArgs) -> Result<()> {
     let storage = config.get_storage_backend()?;
     let scripts = storage.list_scripts()?;
 
-    println!("{}", "Your Scripts".cyan().bold());
+    if scripts.is_empty() {
+        println!("No scripts saved yet.");
+        return Ok(());
+    }
+
+    println!("{}", "Scripts".cyan().bold());
     println!();
 
-    for script in scripts {
+    for script in &scripts {
         println!("  {} {}", script.name.yellow(), script.version.dimmed());
         if let Some(desc) = &script.description {
             println!("    {}", desc.dimmed());
@@ -248,14 +238,10 @@ pub fn show_info(args: InfoArgs) -> Result<()> {
     let storage = config.get_storage_backend()?;
     let script = storage.load_script_by_name(&args.name)?;
 
-    println!("{}", format!("Script: {}", script.name).cyan().bold());
+    println!("{}", script.name.cyan().bold());
     println!();
     println!("  {}: {}", "Version".bold(), script.version.yellow());
-    println!(
-        "  {}: {}",
-        "Language".bold(),
-        script.language.to_string().green()
-    );
+    println!("  {}: {}", "Language".bold(), script.language.to_string().green());
     println!("  {}: {}", "Author".bold(), script.author);
 
     if let Some(desc) = &script.description {
@@ -269,10 +255,14 @@ pub fn show_info(args: InfoArgs) -> Result<()> {
     println!();
     println!("  {}:", "Statistics".bold());
     println!("    Uses: {}", script.metadata.use_count);
-    println!("    Success Rate: {:.1}%", script.success_rate());
+    println!("    Success rate: {:.1}%", script.success_rate());
 
     if let Some(last_run) = script.metadata.last_run {
-        println!("    Last Run: {}", last_run.format("%Y-%m-%d %H:%M:%S"));
+        println!("    Last run: {}", last_run.format("%Y-%m-%d %H:%M:%S"));
+    }
+
+    if let Some(avg_ms) = script.metadata.avg_runtime_ms {
+        println!("    Avg runtime: {:.2}s", avg_ms as f64 / 1000.0);
     }
 
     println!();
@@ -281,7 +271,10 @@ pub fn show_info(args: InfoArgs) -> Result<()> {
         println!("    Directory: {}", dir.yellow());
     }
     if let Some(repo) = &script.context.git_repo {
-        println!("    Git Repo: {}", repo.green());
+        println!("    Git repo: {}", repo.green());
+    }
+    if let Some(branch) = &script.context.git_branch {
+        println!("    Branch: {}", branch.blue());
     }
 
     Ok(())
@@ -290,14 +283,9 @@ pub fn show_info(args: InfoArgs) -> Result<()> {
 pub(crate) fn update_script_metadata(updated_script: &Script) -> Result<()> {
     let config = Config::load()?;
     let storage = config.get_storage_backend()?;
-
-    // Storage backend handles the update
-    storage.save_script(updated_script)?;
-
-    Ok(())
+    storage.update_script(updated_script)
 }
 
-// Helper function for backward compatibility
 pub(crate) fn load_scripts_local() -> Result<Vec<Script>> {
     let config = Config::load()?;
     let storage = config.get_storage_backend()?;
@@ -305,47 +293,47 @@ pub(crate) fn load_scripts_local() -> Result<Vec<Script>> {
 }
 
 pub fn show_stats(_args: StatsArgs) -> Result<()> {
-    println!("Stats feature coming soon...");
+    println!("Stats command is not yet implemented.");
     Ok(())
 }
 
 pub fn show_versions(_args: VersionArgs) -> Result<()> {
-    println!("Versions feature coming soon...");
+    println!("Versions command is not yet implemented.");
     Ok(())
 }
 
 pub fn diff_versions(_args: DiffArgs) -> Result<()> {
-    println!("Diff feature coming soon...");
+    println!("Diff command is not yet implemented.");
     Ok(())
 }
 
 pub fn checkout_version(_args: CheckoutArgs) -> Result<()> {
-    println!("Checkout feature coming soon...");
+    println!("Checkout command is not yet implemented.");
     Ok(())
 }
 
 pub fn share_script(_args: ShareArgs) -> Result<()> {
-    println!("Share feature coming soon...");
+    println!("Share command is not yet implemented.");
     Ok(())
 }
 
 pub fn list_team_members() -> Result<()> {
-    println!("Team members feature coming soon...");
+    println!("Team command is not yet implemented.");
     Ok(())
 }
 
 pub fn list_team_scripts() -> Result<()> {
-    println!("Team scripts feature coming soon...");
+    println!("Team command is not yet implemented.");
     Ok(())
 }
 
 pub fn show_permissions() -> Result<()> {
-    println!("Permissions feature coming soon...");
+    println!("Permissions command is not yet implemented.");
     Ok(())
 }
 
 pub fn recommend_scripts() -> Result<()> {
-    println!("Recommendations feature coming soon...");
+    println!("Recommend command is not yet implemented.");
     Ok(())
 }
 
@@ -364,13 +352,12 @@ pub fn export_scripts(args: ExportArgs) -> Result<()> {
         "markdown" | "md" => export_markdown(&scripts)?,
         _ => {
             return Err(anyhow!(
-                "Unknown export format: '{}'. Supported formats: json, markdown",
+                "Unknown format: '{}'. Supported: json, markdown",
                 args.format
             ));
         }
     };
 
-    // Write to file or stdout
     if let Some(output_file) = args.output {
         fs::write(&output_file, output)?;
         println!(
@@ -388,153 +375,97 @@ pub fn export_scripts(args: ExportArgs) -> Result<()> {
 
 fn export_json(scripts: &[Script]) -> Result<String> {
     #[derive(serde::Serialize)]
-    struct ExportData {
+    struct ExportData<'a> {
         exported_at: String,
-        export_version: String,
+        export_version: &'a str,
         total_scripts: usize,
-        scripts: Vec<Script>,
+        scripts: &'a [Script],
     }
 
     let data = ExportData {
         exported_at: chrono::Utc::now().to_rfc3339(),
-        export_version: "1.0".to_string(),
+        export_version: "1.0",
         total_scripts: scripts.len(),
-        scripts: scripts.to_vec(),
+        scripts,
     };
 
     Ok(serde_json::to_string_pretty(&data)?)
 }
 
 fn export_markdown(scripts: &[Script]) -> Result<String> {
-    let mut output = String::new();
+    let mut out = String::new();
 
-    // Header
-    output.push_str("# ScriptVault Export\n\n");
-    output.push_str(&format!(
-        "**Exported:** {}\n\n",
+    out.push_str("# ScriptVault Export\n\n");
+    out.push_str(&format!(
+        "Exported: {}\n\n",
         chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
     ));
-    output.push_str(&format!("**Total Scripts:** {}\n\n", scripts.len()));
+    out.push_str(&format!("Total scripts: {}\n\n", scripts.len()));
+    out.push_str("## Contents\n\n");
 
-    // Table of contents
-    output.push_str("## Table of Contents\n\n");
     for script in scripts {
-        output.push_str(&format!(
+        out.push_str(&format!(
             "- [{}](#{})\n",
             script.name,
             script.name.to_lowercase().replace(' ', "-")
         ));
     }
-    output.push_str("\n---\n\n");
 
-    // Individual scripts
+    out.push_str("\n---\n\n");
+
     for script in scripts {
-        output.push_str(&format!("## {}\n\n", script.name));
-
-        // Metadata table
-        output.push_str("| Property | Value |\n");
-        output.push_str("|----------|-------|\n");
-        output.push_str(&format!(
-            "| **Language** | {} |\n",
-            script.language.to_string()
-        ));
-        output.push_str(&format!("| **Version** | {} |\n", script.version));
-        output.push_str(&format!("| **Author** | {} |\n", script.author));
+        out.push_str(&format!("## {}\n\n", script.name));
+        out.push_str("| Property | Value |\n");
+        out.push_str("|----------|-------|\n");
+        out.push_str(&format!("| Language | {} |\n", script.language));
+        out.push_str(&format!("| Version | {} |\n", script.version));
+        out.push_str(&format!("| Author | {} |\n", script.author));
 
         if !script.tags.is_empty() {
-            output.push_str(&format!("| **Tags** | {} |\n", script.tags.join(", ")));
+            out.push_str(&format!("| Tags | {} |\n", script.tags.join(", ")));
         }
 
         if let Some(desc) = &script.description {
-            output.push_str(&format!("| **Description** | {} |\n", desc));
+            out.push_str(&format!("| Description | {} |\n", desc));
         }
 
-        output.push_str(&format!(
-            "| **Created** | {} |\n",
+        out.push_str(&format!(
+            "| Created | {} |\n",
             script.created_at.format("%Y-%m-%d %H:%M:%S")
         ));
 
-        // Statistics (if script has been used)
         if script.metadata.use_count > 0 {
-            output.push_str(&format!("| **Uses** | {} |\n", script.metadata.use_count));
-            output.push_str(&format!(
-                "| **Success Rate** | {:.1}% ({}/{} runs) |\n",
-                script.success_rate(),
-                script.metadata.success_count,
-                script.metadata.use_count
+            out.push_str(&format!("| Uses | {} |\n", script.metadata.use_count));
+            out.push_str(&format!(
+                "| Success rate | {:.1}% |\n",
+                script.success_rate()
             ));
-
-            if let Some(avg) = script.metadata.avg_runtime_ms {
-                output.push_str(&format!(
-                    "| **Avg Runtime** | {:.2}s |\n",
-                    avg as f64 / 1000.0
-                ));
-            }
-
-            if let Some(last_run) = script.metadata.last_run {
-                output.push_str(&format!(
-                    "| **Last Run** | {} |\n",
-                    last_run.format("%Y-%m-%d %H:%M:%S")
-                ));
-            }
         }
 
-        output.push_str("\n");
+        out.push_str("\n");
 
-        // Context (if available)
-        if script.context.directory.is_some()
-            || script.context.git_repo.is_some()
-            || script.context.git_branch.is_some()
-        {
-            output.push_str("### Context\n\n");
-
+        if script.context.directory.is_some() || script.context.git_repo.is_some() {
+            out.push_str("### Context\n\n");
             if let Some(dir) = &script.context.directory {
-                output.push_str(&format!("- **Directory:** `{}`\n", dir));
+                out.push_str(&format!("- Directory: `{}`\n", dir));
             }
             if let Some(repo) = &script.context.git_repo {
-                output.push_str(&format!("- **Git Repo:** `{}`\n", repo));
+                out.push_str(&format!("- Git repo: `{}`\n", repo));
             }
             if let Some(branch) = &script.context.git_branch {
-                output.push_str(&format!("- **Branch:** `{}`\n", branch));
+                out.push_str(&format!("- Branch: `{}`\n", branch));
             }
-            output.push_str("\n");
+            out.push_str("\n");
         }
 
-        // Script content
-        output.push_str("### Script\n\n");
-        output.push_str(&format!(
+        out.push_str("### Script\n\n");
+        out.push_str(&format!(
             "```{}\n{}\n```\n\n",
-            script.language.to_string(),
-            script.content
+            script.language, script.content
         ));
-
-        // Command to run
-        output.push_str(&format!("**Run:** `sv run {}`\n\n", script.name));
-
-        output.push_str("---\n\n");
+        out.push_str(&format!("Run: `sv run {}`\n\n", script.name));
+        out.push_str("---\n\n");
     }
 
-    // Footer with helpful commands
-    output.push_str("## ScriptVault Commands\n\n");
-    output.push_str("```bash\n");
-    output.push_str("# Find scripts\n");
-    output.push_str("sv find <query>\n");
-    output.push_str("sv find --tag <tag>\n");
-    output.push_str("sv find --here\n\n");
-    output.push_str("# Run scripts\n");
-    output.push_str("sv run <script-name>\n");
-    output.push_str("sv run <script-name> --dry-run\n");
-    output.push_str("sv run <script-name> --verbose\n\n");
-    output.push_str("# View information\n");
-    output.push_str("sv info <script-name>\n");
-    output.push_str("sv history [<script-name>]\n");
-    output.push_str("sv list\n");
-    output.push_str("```\n\n");
-
-    output.push_str(&format!(
-        "*Exported from ScriptVault on {}*\n",
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
-    ));
-
-    Ok(output)
+    Ok(out)
 }

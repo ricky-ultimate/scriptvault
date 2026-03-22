@@ -2,10 +2,8 @@ use anyhow::Result;
 use colored::*;
 
 pub fn sync_vault() -> Result<()> {
-    println!("{}", "Syncing vault...".cyan());
-    println!("{}", "Sync feature not yet implemented.".yellow());
+    println!("{}", "Sync is not yet available.".yellow());
     println!();
-    println!("For now, all scripts are stored locally at:");
-    println!("  ~/.scriptvault/");
+    println!("Scripts are stored locally at ~/.scriptvault/");
     Ok(())
 }

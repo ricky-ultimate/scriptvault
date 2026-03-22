@@ -2,6 +2,7 @@ use crate::constants::*;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Script {
@@ -76,20 +77,6 @@ impl ScriptLanguage {
         }
     }
 
-    pub fn to_string(&self) -> &str {
-        match self {
-            Self::Bash => "bash",
-            Self::Shell => "shell",
-            Self::Python => "python",
-            Self::JavaScript => "javascript",
-            Self::Ruby => "ruby",
-            Self::Perl => "perl",
-            Self::PowerShell => "powershell",
-            Self::Batch => "batch",
-            Self::Unknown => "unknown",
-        }
-    }
-
     pub fn get_shebang(&self) -> Option<&str> {
         match self {
             Self::Bash => Some(BASH_SHEBANG),
@@ -114,6 +101,23 @@ impl ScriptLanguage {
     }
 }
 
+impl fmt::Display for ScriptLanguage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Self::Bash => "bash",
+            Self::Shell => "shell",
+            Self::Python => "python",
+            Self::JavaScript => "javascript",
+            Self::Ruby => "ruby",
+            Self::Perl => "perl",
+            Self::PowerShell => "powershell",
+            Self::Batch => "batch",
+            Self::Unknown => "unknown",
+        };
+        write!(f, "{}", s)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionRecord {
     pub id: String,
@@ -134,7 +138,7 @@ impl Script {
 
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
-        let hash = format!("{:x}", hasher.finalize());
+        let hash = hex::encode(hasher.finalize());
 
         let line_count = content.lines().count();
         let size_bytes = content.len();
@@ -142,7 +146,7 @@ impl Script {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             name,
-            content: content.clone(),
+            content,
             version: DEFAULT_VERSION.to_string(),
             language,
             tags: Vec::new(),

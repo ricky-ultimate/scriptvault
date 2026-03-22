@@ -14,15 +14,11 @@ pub fn detect_context() -> Result<ScriptContext> {
 
     let mut environment = HashMap::new();
 
-    // Capture relevant environment variables
     if let Ok(shell) = env::var("SHELL") {
         environment.insert("SHELL".to_string(), shell);
     }
     if let Ok(user) = env::var("USER") {
         environment.insert("USER".to_string(), user);
-    }
-    if let Ok(os) = env::var("OS") {
-        environment.insert("OS".to_string(), os);
     }
 
     Ok(ScriptContext {
@@ -44,14 +40,12 @@ fn detect_git_context() -> (Option<String>, Option<String>) {
         Err(_) => return (None, None),
     };
 
-    // Get remote URL
     let git_repo = repo
         .find_remote("origin")
         .ok()
         .and_then(|remote| remote.url().map(|s| s.to_string()))
         .map(|url| normalize_git_url(&url));
 
-    // Get current branch
     let git_branch = repo
         .head()
         .ok()
@@ -61,16 +55,12 @@ fn detect_git_context() -> (Option<String>, Option<String>) {
 }
 
 pub fn normalize_git_url(url: &str) -> String {
-    // Convert git@github.com:user/repo.git to github.com/user/repo
-    let url = url
-        .trim_start_matches("git@")
+    url.trim_start_matches("git@")
         .trim_start_matches("https://")
         .trim_start_matches("http://")
         .replace(':', "/")
         .trim_end_matches(".git")
-        .to_string();
-
-    url
+        .to_string()
 }
 
 pub fn show_context() -> Result<()> {
@@ -108,21 +98,16 @@ pub fn show_context() -> Result<()> {
 }
 
 pub fn contexts_match(ctx1: &ScriptContext, ctx2: &ScriptContext) -> bool {
-    // Check if contexts are similar enough
-
-    // Exact git repo match is strong
     if ctx1.git_repo.is_some() && ctx1.git_repo == ctx2.git_repo {
         return true;
     }
 
-    // Same directory is also a match
     if ctx1.directory.is_some() && ctx1.directory == ctx2.directory {
         return true;
     }
 
-    // Check if one directory is a parent of the other
     if let (Some(dir1), Some(dir2)) = (&ctx1.directory, &ctx2.directory) {
-        if dir1.starts_with(dir2) || dir2.starts_with(dir1) {
+        if dir1.starts_with(dir2.as_str()) || dir2.starts_with(dir1.as_str()) {
             return true;
         }
     }
