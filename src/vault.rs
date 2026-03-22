@@ -269,6 +269,124 @@ pub fn list_scripts(args: ListArgs) -> Result<()> {
     Ok(())
 }
 
+pub fn show_info(args: InfoArgs) -> Result<()> {
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
+    let script = storage.load_script_by_name(&args.name)?;
+
+    println!("{}", script.name.cyan().bold());
+    println!();
+    println!("  {}: {}", "Version".bold(), script.version.yellow());
+    println!(
+        "  {}: {}",
+        "Language".bold(),
+        script.language.to_string().green()
+    );
+    println!("  {}: {}", "Author".bold(), script.author);
+    println!(
+        "  {}: {}",
+        "Created".bold(),
+        script.created_at.format("%Y-%m-%d %H:%M:%S")
+    );
+
+    if let Some(desc) = &script.description {
+        println!("  {}: {}", "Description".bold(), desc);
+    }
+
+    if !script.tags.is_empty() {
+        println!("  {}: {}", "Tags".bold(), script.tags.join(", ").cyan());
+    }
+
+    println!();
+    println!("  {}:", "Context".bold());
+    if let Some(dir) = &script.context.directory {
+        println!("    Directory: {}", dir.yellow());
+    }
+    if let Some(repo) = &script.context.git_repo {
+        println!("    Git repo:  {}", repo.green());
+    }
+    if let Some(branch) = &script.context.git_branch {
+        println!("    Branch:    {}", branch.blue());
+    }
+
+    println!();
+    if script.metadata.use_count > 0 {
+        println!(
+            "  {} runs, {:.1}% success{}",
+            script.metadata.use_count,
+            script.success_rate(),
+            script
+                .metadata
+                .last_run
+                .map(|t| format!(", last run {}", t.format("%Y-%m-%d")))
+                .unwrap_or_default()
+                .dimmed()
+        );
+    } else {
+        println!("  {}", "Never run".dimmed());
+    }
+
+    println!(
+        "  Run {} for full execution breakdown",
+        format!("sv stats {}", script.name).yellow()
+    );
+
+    Ok(())
+}
+
+pub fn show_stats(args: StatsArgs) -> Result<()> {
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
+    let script = storage
+        .load_script_by_name(&args.name)
+        .map_err(|_| anyhow!("Script not found: {}", args.name))?;
+
+    println!("{}", script.name.cyan().bold());
+    println!();
+
+    println!("  {}:", "Content".bold());
+    println!("    Language:  {}", script.language.to_string().green());
+    println!("    Size:      {} bytes", script.metadata.size_bytes);
+    println!("    Lines:     {}", script.metadata.line_count);
+    let hash_prefix = if script.metadata.hash.len() >= 16 {
+        &script.metadata.hash[..16]
+    } else {
+        &script.metadata.hash
+    };
+    println!("    Hash:      {}", hash_prefix.dimmed());
+
+    println!();
+    println!("  {}:", "Execution".bold());
+    println!("    Total runs:   {}", script.metadata.use_count);
+    println!("    Successful:   {}", script.metadata.success_count);
+    println!("    Failed:       {}", script.metadata.failure_count);
+
+    let rate = script.success_rate();
+    let rate_colored = if rate >= 90.0 {
+        format!("{:.1}%", rate).green().to_string()
+    } else if rate >= 70.0 {
+        format!("{:.1}%", rate).yellow().to_string()
+    } else {
+        format!("{:.1}%", rate).red().to_string()
+    };
+    println!("    Success rate: {}", rate_colored);
+
+    if let Some(avg_ms) = script.metadata.avg_runtime_ms {
+        println!("    Avg runtime:  {:.2}s", avg_ms as f64 / 1000.0);
+    }
+
+    if let Some(last_run) = script.metadata.last_run {
+        println!();
+        println!("  {}:", "Last Run".bold());
+        println!("    Time: {}", last_run.format("%Y-%m-%d %H:%M:%S UTC"));
+        if let Some(ref by) = script.metadata.last_run_by {
+            println!("    By:   {}", by);
+        }
+    }
+
+    Ok(())
+}
+
 pub fn cat_script(args: CatArgs) -> Result<()> {
     let config = Config::load()?;
     let storage = config.get_storage_backend()?;
