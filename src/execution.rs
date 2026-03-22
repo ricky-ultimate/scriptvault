@@ -328,34 +328,37 @@ pub fn show_history(args: HistoryArgs) -> Result<()> {
     println!("{}", "Execution History".cyan().bold());
     println!();
     println!(
-        "{:<20} {:<20} {:<15} {:<10} {:<10}",
+        "{:<20} {:<22} {:<15} {:<10} {:<10}",
         "TIME".bold(),
         "SCRIPT".bold(),
         "USER".bold(),
         "EXIT CODE".bold(),
         "DURATION".bold()
     );
-    println!("{}", "─".repeat(78).dimmed());
+    println!("{}", "─".repeat(80).dimmed());
 
     let limit = if args.recent { 10 } else { DEFAULT_HISTORY_LIMIT };
 
     for record in filtered.iter().rev().take(limit) {
         let time = record.executed_at.format("%Y-%m-%d %H:%M:%S");
-        let script_name = script_map
-            .get(&record.script_id)
-            .map(|s| s.as_str())
-            .unwrap_or(&record.script_id);
+
+        let script_display = match script_map.get(&record.script_id) {
+            Some(name) => name.yellow().to_string(),
+            None => "[deleted]".dimmed().to_string(),
+        };
+
         let exit_status = if record.exit_code == 0 {
             record.exit_code.to_string().green()
         } else {
             record.exit_code.to_string().red()
         };
+
         let duration = format!("{:.2}s", record.duration_ms as f64 / 1000.0);
 
         println!(
-            "{:<20} {:<20} {:<15} {:<10} {:<10}",
+            "{:<20} {:<22} {:<15} {:<10} {:<10}",
             time.to_string().dimmed(),
-            script_name.yellow(),
+            script_display,
             record.executed_by,
             exit_status,
             duration
