@@ -5,8 +5,10 @@ use crate::context;
 use crate::script::{Script, ScriptLanguage, Visibility};
 use crate::storage::StorageBackend;
 use anyhow::{anyhow, Context as _, Result};
+use chrono::Utc;
 use colored::*;
 use dialoguer::{Confirm, Input};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
 
@@ -36,6 +38,8 @@ pub fn save_script(args: SaveArgs) -> Result<()> {
     let mut script = Script::new(name, content, language);
 
     script.context = context::detect_context()?;
+
+    let existing = storage.load_script_by_name(&script.name).ok();
 
     if !args.yes {
         println!("{}", "Saving script to vault...".cyan().bold());
@@ -80,6 +84,24 @@ pub fn save_script(args: SaveArgs) -> Result<()> {
 
     if let Some(username) = &config.username {
         script.author = username.clone();
+    }
+
+    if let Some(ref ex) = existing {
+        if ex.metadata.hash == script.metadata.hash
+            && ex.tags == script.tags
+            && ex.description == script.description
+        {
+            println!("{} No changes: {}", "i".cyan(), script.name.yellow());
+            return Ok(());
+        }
+        script.id = ex.id.clone();
+        script.created_at = ex.created_at;
+        script.metadata.use_count = ex.metadata.use_count;
+        script.metadata.success_count = ex.metadata.success_count;
+        script.metadata.failure_count = ex.metadata.failure_count;
+        script.metadata.last_run = ex.metadata.last_run;
+        script.metadata.last_run_by = ex.metadata.last_run_by.clone();
+        script.metadata.avg_runtime_ms = ex.metadata.avg_runtime_ms;
     }
 
     storage.save_script(&script)?;
@@ -241,7 +263,11 @@ pub fn show_info(args: InfoArgs) -> Result<()> {
     println!("{}", script.name.cyan().bold());
     println!();
     println!("  {}: {}", "Version".bold(), script.version.yellow());
-    println!("  {}: {}", "Language".bold(), script.language.to_string().green());
+    println!(
+        "  {}: {}",
+        "Language".bold(),
+        script.language.to_string().green()
+    );
     println!("  {}: {}", "Author".bold(), script.author);
 
     if let Some(desc) = &script.description {
@@ -280,6 +306,169 @@ pub fn show_info(args: InfoArgs) -> Result<()> {
     Ok(())
 }
 
+pub fn show_stats(args: StatsArgs) -> Result<()> {
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
+    let script = storage
+        .load_script_by_name(&args.name)
+        .map_err(|_| anyhow!("Script not found: {}", args.name))?;
+
+    println!("{}", script.name.cyan().bold());
+    println!();
+    println!(
+        "  {}: {}",
+        "Language".bold(),
+        script.language.to_string().green()
+    );
+    println!("  {}: {}", "Version".bold(), script.version.yellow());
+    println!(
+        "  {}: {} bytes ({} lines)",
+        "Size".bold(),
+        script.metadata.size_bytes,
+        script.metadata.line_count
+    );
+    println!();
+    println!("  {}:", "Execution Statistics".bold());
+    println!("    Total runs:    {}", script.metadata.use_count);
+    println!("    Successful:    {}", script.metadata.success_count);
+    println!("    Failed:        {}", script.metadata.failure_count);
+    println!("    Success rate:  {:.1}%", script.success_rate());
+
+    if let Some(avg_ms) = script.metadata.avg_runtime_ms {
+        println!("    Avg runtime:   {:.2}s", avg_ms as f64 / 1000.0);
+    }
+
+    if let Some(last_run) = script.metadata.last_run {
+        println!();
+        println!("  {}:", "Last Execution".bold());
+        println!(
+            "    Time:   {}",
+            last_run.format("%Y-%m-%d %H:%M:%S UTC")
+        );
+        if let Some(ref by) = script.metadata.last_run_by {
+            println!("    By:     {}", by);
+        }
+    }
+
+    let hash_prefix = if script.metadata.hash.len() >= 16 {
+        &script.metadata.hash[..16]
+    } else {
+        &script.metadata.hash
+    };
+
+    println!();
+    println!("  {}:", "Content".bold());
+    println!("    Hash:   {}", hash_prefix.dimmed());
+
+    Ok(())
+}
+
+pub fn cat_script(args: CatArgs) -> Result<()> {
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
+    let script = storage
+        .load_script_by_name(&args.name)
+        .map_err(|_| anyhow!("Script not found: {}", args.name))?;
+
+    print!("{}", script.content);
+
+    Ok(())
+}
+
+pub fn edit_script(args: EditArgs) -> Result<()> {
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
+
+    let mut script = storage
+        .load_script_by_name(&args.name)
+        .map_err(|_| anyhow!("Script not found: {}", args.name))?;
+
+    let editor = std::env::var("EDITOR")
+        .or_else(|_| std::env::var("VISUAL"))
+        .unwrap_or_else(|_| "vi".to_string());
+
+    let mut parts = editor.split_whitespace();
+    let editor_cmd = parts.next().unwrap_or("vi").to_string();
+    let editor_args: Vec<String> = parts.map(|s| s.to_string()).collect();
+
+    let temp_dir = std::env::temp_dir().join("scriptvault");
+    fs::create_dir_all(&temp_dir)?;
+
+    let temp_filename = format!("{}.{}", script.name, script.language.extension());
+    let temp_path = temp_dir.join(&temp_filename);
+
+    fs::write(&temp_path, &script.content).context("Failed to write temporary file")?;
+
+    let status = std::process::Command::new(&editor_cmd)
+        .args(&editor_args)
+        .arg(&temp_path)
+        .status()
+        .map_err(|e| anyhow!("Failed to open editor '{}': {}", editor_cmd, e))?;
+
+    let new_content = fs::read_to_string(&temp_path).context("Failed to read edited file")?;
+
+    if let Err(e) = fs::remove_file(&temp_path) {
+        eprintln!("Warning: failed to remove temporary file: {}", e);
+    }
+
+    if !status.success() {
+        println!("Edit cancelled");
+        return Ok(());
+    }
+
+    let mut hasher = Sha256::new();
+    hasher.update(new_content.as_bytes());
+    let new_hash = hex::encode(hasher.finalize());
+
+    if new_hash == script.metadata.hash {
+        println!("No changes made");
+        return Ok(());
+    }
+
+    script.content = new_content.clone();
+    script.metadata.hash = new_hash;
+    script.metadata.size_bytes = new_content.len();
+    script.metadata.line_count = new_content.lines().count();
+    script.updated_at = Utc::now();
+
+    storage.update_script(&script)?;
+
+    println!("{} Updated: {}", "✓".green().bold(), script.name.yellow());
+
+    Ok(())
+}
+
+pub fn rename_script(args: RenameArgs) -> Result<()> {
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
+
+    let mut script = storage
+        .load_script_by_name(&args.old_name)
+        .map_err(|_| anyhow!("Script not found: {}", args.old_name))?;
+
+    if storage.load_script_by_name(&args.new_name).is_ok() {
+        return Err(anyhow!(
+            "A script named '{}' already exists",
+            args.new_name
+        ));
+    }
+
+    let old_name = script.name.clone();
+    script.name = args.new_name.clone();
+    script.updated_at = Utc::now();
+
+    storage.update_script(&script)?;
+
+    println!(
+        "{} Renamed: {} -> {}",
+        "✓".green().bold(),
+        old_name.yellow(),
+        args.new_name.yellow()
+    );
+
+    Ok(())
+}
+
 pub fn delete_script(args: DeleteArgs) -> Result<()> {
     let config = Config::load()?;
     let storage = config.get_storage_backend()?;
@@ -312,8 +501,43 @@ pub fn delete_script(args: DeleteArgs) -> Result<()> {
     }
 
     storage.delete_script(&script.id)?;
+    purge_script_history(&script.id)?;
 
     println!("{} Deleted: {}", "✓".green().bold(), args.name.yellow());
+
+    Ok(())
+}
+
+fn purge_script_history(script_id: &str) -> Result<()> {
+    let history_path = Config::history_path()?;
+
+    if !history_path.exists() {
+        return Ok(());
+    }
+
+    let contents = fs::read_to_string(&history_path)?;
+    let retained: Vec<&str> = contents
+        .lines()
+        .filter(|line| {
+            if line.is_empty() {
+                return false;
+            }
+            serde_json::from_str::<serde_json::Value>(line)
+                .ok()
+                .and_then(|v| {
+                    v.get("script_id")
+                        .and_then(|id| id.as_str())
+                        .map(|id| id != script_id)
+                })
+                .unwrap_or(true)
+        })
+        .collect();
+
+    if retained.is_empty() {
+        fs::write(&history_path, "")?;
+    } else {
+        fs::write(&history_path, format!("{}\n", retained.join("\n")))?;
+    }
 
     Ok(())
 }
@@ -328,11 +552,6 @@ pub(crate) fn load_scripts_local() -> Result<Vec<Script>> {
     let config = Config::load()?;
     let storage = config.get_storage_backend()?;
     storage.list_scripts()
-}
-
-pub fn show_stats(_args: StatsArgs) -> Result<()> {
-    println!("Stats command is not yet implemented.");
-    Ok(())
 }
 
 pub fn show_versions(_args: VersionArgs) -> Result<()> {
