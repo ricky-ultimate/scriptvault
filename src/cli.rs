@@ -18,6 +18,7 @@ pub enum Command {
     List(ListArgs),
     Info(InfoArgs),
     Run(RunArgs),
+    Delete(DeleteArgs),
     History(HistoryArgs),
     Stats(StatsArgs),
     Versions(VersionArgs),
@@ -121,6 +122,14 @@ pub struct RunArgs {
 
     #[arg(long)]
     pub ci: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct DeleteArgs {
+    pub name: String,
+
+    #[arg(long)]
+    pub yes: bool,
 }
 
 #[derive(Args, Debug)]

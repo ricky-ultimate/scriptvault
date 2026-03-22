@@ -36,6 +36,7 @@ fn run() -> Result<()> {
         Command::List(args) => vault::list_scripts(args)?,
         Command::Info(args) => vault::show_info(args)?,
         Command::Run(args) => execution::run_script(args)?,
+        Command::Delete(args) => vault::delete_script(args)?,
         Command::History(args) => execution::show_history(args)?,
         Command::Stats(args) => vault::show_stats(args)?,
         Command::Versions(args) => vault::show_versions(args)?,

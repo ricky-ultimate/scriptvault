@@ -6,7 +6,7 @@ use crate::script::{Script, ScriptLanguage, Visibility};
 use crate::storage::StorageBackend;
 use anyhow::{anyhow, Context as _, Result};
 use colored::*;
-use dialoguer::Input;
+use dialoguer::{Confirm, Input};
 use std::fs;
 use std::path::Path;
 
@@ -276,6 +276,44 @@ pub fn show_info(args: InfoArgs) -> Result<()> {
     if let Some(branch) = &script.context.git_branch {
         println!("    Branch: {}", branch.blue());
     }
+
+    Ok(())
+}
+
+pub fn delete_script(args: DeleteArgs) -> Result<()> {
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
+
+    let script = storage
+        .load_script_by_name(&args.name)
+        .map_err(|_| anyhow!("Script not found: {}", args.name))?;
+
+    if !args.yes {
+        println!("{}", script.name.yellow().bold());
+
+        if let Some(desc) = &script.description {
+            println!("  {}", desc.dimmed());
+        }
+        if !script.tags.is_empty() {
+            println!("  Tags: {}", script.tags.join(", ").cyan());
+        }
+        println!("  Uses: {}", script.metadata.use_count);
+        println!();
+
+        let confirmed = Confirm::new()
+            .with_prompt("Delete this script?")
+            .default(false)
+            .interact()?;
+
+        if !confirmed {
+            println!("Cancelled");
+            return Ok(());
+        }
+    }
+
+    storage.delete_script(&script.id)?;
+
+    println!("{} Deleted: {}", "✓".green().bold(), args.name.yellow());
 
     Ok(())
 }
