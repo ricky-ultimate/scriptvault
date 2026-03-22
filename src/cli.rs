@@ -19,6 +19,9 @@ pub enum Command {
     Info(InfoArgs),
     Run(RunArgs),
     Delete(DeleteArgs),
+    Cat(CatArgs),
+    Edit(EditArgs),
+    Rename(RenameArgs),
     History(HistoryArgs),
     Stats(StatsArgs),
     Versions(VersionArgs),
@@ -130,6 +133,22 @@ pub struct DeleteArgs {
 
     #[arg(long)]
     pub yes: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct CatArgs {
+    pub name: String,
+}
+
+#[derive(Args, Debug)]
+pub struct EditArgs {
+    pub name: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RenameArgs {
+    pub old_name: String,
+    pub new_name: String,
 }
 
 #[derive(Args, Debug)]
