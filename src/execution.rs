@@ -50,7 +50,7 @@ pub fn run_script(args: RunArgs) -> Result<()> {
         }
     }
 
-    show_script_preview(&script)?;
+    show_script_preview(&script, &args.args)?;
 
     let needs_confirm = args.confirm || (config.confirm_before_run && !ci_mode);
     if needs_confirm && !args.dry_run {
@@ -134,7 +134,7 @@ pub fn run_script(args: RunArgs) -> Result<()> {
     Ok(())
 }
 
-fn show_script_preview(script: &Script) -> Result<()> {
+fn show_script_preview(script: &Script, run_args: &[String]) -> Result<()> {
     println!("╭{}╮", "─".repeat(60));
     println!(
         "│  {} {}",
@@ -156,6 +156,10 @@ fn show_script_preview(script: &Script) -> Result<()> {
 
     if let Some(dir) = &script.context.directory {
         println!("│  Directory: {}", dir.yellow());
+    }
+
+    if !run_args.is_empty() {
+        println!("│  Arguments: {}", run_args.join(" ").cyan());
     }
 
     if script.metadata.use_count > 0 {
@@ -296,6 +300,20 @@ pub fn show_history(args: HistoryArgs) -> Result<()> {
         .iter()
         .map(|s| (s.id.clone(), s.name.clone()))
         .collect();
+
+    if let Some(ref script_name) = args.script {
+        let found = scripts.iter().any(|s| s.name == *script_name);
+        if !found {
+            println!(
+                "{} '{}' is not in your vault (it may have been deleted).",
+                "Note:".yellow(),
+                script_name
+            );
+            println!("History for deleted scripts cannot be filtered by name.");
+            println!("Run 'sv history' to see all records including those marked [deleted].");
+            return Ok(());
+        }
+    }
 
     let filtered: Vec<&ExecutionRecord> = records
         .iter()
