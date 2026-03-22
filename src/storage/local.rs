@@ -53,7 +53,7 @@ impl LocalStorage {
 impl StorageBackend for LocalStorage {
     fn save_script(&self, script: &Script) -> Result<()> {
         let mut scripts = self.load_all()?;
-        scripts.retain(|s| s.id != script.id && s.name != script.name);
+        scripts.retain(|s| s.name != script.name);
         scripts.push(script.clone());
         self.persist(&scripts)
     }
@@ -198,6 +198,31 @@ mod tests {
     }
 
     #[test]
+    fn test_save_deduplicates_by_name_only() {
+        let tmp = TempDir::new().unwrap();
+        let storage = LocalStorage::new(tmp.path().to_path_buf()).unwrap();
+        let original = make_script("same-name");
+        storage.save_script(&original).unwrap();
+
+        let mut diverged = make_script("same-name");
+        diverged.id = uuid::Uuid::new_v4().to_string();
+        storage.save_script(&diverged).unwrap();
+
+        let all = storage.list_scripts().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].id, diverged.id);
+    }
+
+    #[test]
+    fn test_save_different_names_kept_separate() {
+        let tmp = TempDir::new().unwrap();
+        let storage = LocalStorage::new(tmp.path().to_path_buf()).unwrap();
+        storage.save_script(&make_script("a")).unwrap();
+        storage.save_script(&make_script("b")).unwrap();
+        assert_eq!(storage.list_scripts().unwrap().len(), 2);
+    }
+
+    #[test]
     fn test_update_modifies_in_place() {
         let tmp = TempDir::new().unwrap();
         let storage = LocalStorage::new(tmp.path().to_path_buf()).unwrap();
@@ -239,17 +264,6 @@ mod tests {
         assert!(storage.script_exists(&id).unwrap());
         storage.delete_script(&id).unwrap();
         assert!(!storage.script_exists(&id).unwrap());
-    }
-
-    #[test]
-    fn test_save_deduplicates_by_name() {
-        let tmp = TempDir::new().unwrap();
-        let storage = LocalStorage::new(tmp.path().to_path_buf()).unwrap();
-        let mut s1 = make_script("same-name");
-        storage.save_script(&s1).unwrap();
-        s1.id = uuid::Uuid::new_v4().to_string();
-        storage.save_script(&s1).unwrap();
-        assert_eq!(storage.list_scripts().unwrap().len(), 1);
     }
 
     #[test]
