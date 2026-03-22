@@ -84,6 +84,22 @@ fn test_resave_same_name_replaces_record() {
 }
 
 #[test]
+fn test_resave_diverged_id_replaces_by_name() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+    let original = make_script("deploy", "echo original");
+    s.save_script(&original).unwrap();
+
+    let mut diverged = make_script("deploy", "echo diverged");
+    s.save_script(&diverged).unwrap();
+
+    let all = s.list_scripts().unwrap();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].content, "echo diverged");
+    assert_eq!(all[0].id, diverged.id);
+}
+
+#[test]
 fn test_update_preserves_id() {
     let tmp = TempDir::new().unwrap();
     let s = storage(&tmp);
@@ -124,7 +140,7 @@ fn test_delete_unknown_id_errors() {
 }
 
 #[test]
-fn test_list_returns_all_scripts_alphabetically() {
+fn test_list_returns_all_scripts() {
     let tmp = TempDir::new().unwrap();
     let s = storage(&tmp);
     s.save_script(&make_script("zebra", "echo z")).unwrap();
@@ -170,6 +186,33 @@ fn test_rename_via_update() {
     s.update_script(&script).unwrap();
     assert!(s.load_script_by_name("old-name").is_err());
     assert!(s.load_script_by_name("new-name").is_ok());
+}
+
+#[test]
+fn test_rename_then_resave_original_name_creates_new_entry() {
+    let tmp = TempDir::new().unwrap();
+    let s = storage(&tmp);
+
+    let mut original = make_script("deploy", "echo deploy v1");
+    let original_id = original.id.clone();
+    s.save_script(&original).unwrap();
+
+    original.name = "deploy-old".to_string();
+    s.update_script(&original).unwrap();
+
+    let new_deploy = make_script("deploy", "echo deploy v2");
+    s.save_script(&new_deploy).unwrap();
+
+    let all = s.list_scripts().unwrap();
+    assert_eq!(all.len(), 2);
+
+    let renamed = s.load_script_by_name("deploy-old").unwrap();
+    assert_eq!(renamed.id, original_id);
+    assert_eq!(renamed.content, "echo deploy v1");
+
+    let fresh = s.load_script_by_name("deploy").unwrap();
+    assert_ne!(fresh.id, original_id);
+    assert_eq!(fresh.content, "echo deploy v2");
 }
 
 #[test]
