@@ -40,6 +40,7 @@ fn run() -> Result<()> {
         Command::Cat(args) => vault::cat_script(args)?,
         Command::Edit(args) => vault::edit_script(args)?,
         Command::Rename(args) => vault::rename_script(args)?,
+        Command::Copy(args) => vault::copy_script(args)?,
         Command::History(args) => execution::show_history(args)?,
         Command::Stats(args) => vault::show_stats(args)?,
         Command::Versions(args) => vault::show_versions(args)?,
