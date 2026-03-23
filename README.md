@@ -1,202 +1,140 @@
 # ScriptVault
 
-> Your terminal script time-machine. Never lose a useful script again.
+A terminal script vault. Save scripts from any project, find them later from anywhere, track execution history.
 
-**ScriptVault** is a local-first, privacy-focused CLI tool that helps developers save, organize, find, and run their scripts with context awareness. Think of it as Git for your scripts, combined with a time-machine that remembers where and when you used them.
+## What It Does
 
-## Features
+ScriptVault stores your shell scripts, Python scripts, and other executables in a personal vault at `~/.scriptvault/`. When you save a script, it captures the directory and git context so you can find relevant scripts later.
 
-- **Save & Organize**: Store scripts with automatic context detection (directory, git repo, environment)
-- **Smart Search**: Find scripts by name, tags, context, or content
-- **Safe Execution**: Preview scripts before running, with safety checks for dangerous commands
-- **Version Control**: Track script versions and compare changes over time
-- **Context Aware**: Scripts remember where they were created and where they work best
-- **Execution History**: Complete audit trail of every script run
-- **Team Collaboration**: Share scripts with your team (coming soon)
-- **Git Integration**: Automatically detect and tag scripts by git repository
+Scripts are globally available — save a deployment script in one project, run it from any directory.
 
-## Quick Start
+## Installation
 
-### Installation
-
+Requires Rust (install via [rustup.rs](https://rustup.rs)).
 ```bash
-# Via cargo
-cargo install scriptvault
-
-# Or clone and build
 git clone https://github.com/ricky-ultimate/scriptvault
 cd scriptvault
-cargo build --release
+cargo install --path .
 ```
 
-### First Steps
-
+Or build manually:
 ```bash
-# Authenticate (local mode for now)
-sv auth login --token local
-
-# Save your first script
-sv save ./deploy.sh --tags "deployment docker" --description "Deploy to staging"
-
-# Find it later
-sv find deployment
-
-# Run it with confidence
-sv run deploy
-
-# View execution history
-sv history
+cargo build --release
+cp target/release/sv ~/.local/bin/
 ```
 
-## Usage
+## Quick Start
+```bash
+sv auth login
+sv doctor
+
+sv save ./deploy.sh --tags "deployment" --description "Deploy to staging"
+sv list
+sv run deploy
+```
+
+## Commands
 
 ### Saving Scripts
-
 ```bash
-# Save a script with automatic context detection
 sv save ./script.sh
+sv save ./script.sh --name deploy-staging
+sv save ./script.sh --tags "deployment docker" --description "Deploy app" --yes
+```
 
-# Add tags and description
-sv save ./backup.sh --tags "database backup" --description "Daily DB backup"
+Re-saving a script after editing it on disk updates the vault and bumps the patch version:
+```bash
+sv save ./deploy.sh
+```
 
-# Skip interactive prompts
-sv save ./script.sh --yes --tags "tag1 tag2"
+Or use the explicit update command which errors if the script is not already in the vault:
+```bash
+sv update ./deploy.sh
 ```
 
 ### Finding Scripts
-
 ```bash
-# Search by name or content
-sv find backup
+sv list
+sv list --recent
 
-# Find scripts for current directory
-sv find --here
-
-# Filter by tag
+sv find deploy
 sv find --tag deployment
-
-# Filter by language
-sv find --language python
+sv find --language bash
+sv find --here
+sv find --recent
 ```
+
+`--here` filters to scripts saved from the current directory or git repo.
 
 ### Running Scripts
-
 ```bash
-# Run a script
-sv run deploy-staging
-
-# Dry run (preview without executing)
-sv run deploy-staging --dry-run
-
-# Pass arguments to the script
-sv run backup --args production today
-
-# Verbose output
-sv run script --verbose
+sv run deploy
+sv run deploy --dry-run
+sv run deploy arg1 arg2
+sv run deploy --verbose
+sv run deploy --ci
 ```
 
-### Script Information
+Arguments after the script name are passed through to the script. `--verbose` prints the script content, interpreter, and arguments before execution. `--ci` skips all confirmation prompts.
 
+### Managing Scripts
 ```bash
-# List all scripts
-sv list
+sv info deploy
+sv stats deploy
+sv cat deploy
+sv edit deploy
+sv rename deploy deploy-staging
+sv copy deploy deploy-prod
+sv delete deploy
+```
 
-# Get detailed info
-sv info deploy-staging
+`sv edit` opens the script in `$EDITOR`. `sv info` shows identity and context. `sv stats` shows execution statistics.
 
-# View execution history
+### History
+```bash
 sv history
-sv history deploy-staging
+sv history deploy
 sv history --failed
-
-# View statistics
-sv stats deploy-staging
+sv history --recent
 ```
 
-### Context & Organization
-
+### Exporting
 ```bash
-# Show current context
-sv context
-
-# Get recommendations for current project
-sv recommend
-
-# Export scripts as documentation
 sv export --format markdown --output SCRIPTS.md
+sv export --format json --output scripts.json
 ```
 
-## Architecture
+## How Versioning Works
 
-ScriptVault is built with Rust and uses:
+Scripts start at `v1.0.0`. The patch version increments automatically whenever content changes via `sv save`, `sv update`, or `sv edit`. Version is never decremented.
 
-- **Local Storage**: All scripts stored in `~/.scriptvault/`
-- **JSONL Format**: Append-only execution history
-- **Git Integration**: Automatic repository detection
-- **Safe Execution**: Sandboxed script running with safety checks
-
-### Directory Structure
-
+## Directory Structure
 ```
 ~/.scriptvault/
-├── config.json          # Configuration
+├── config.json
 ├── vault/
-│   └── scripts.json     # Your scripts
-└── history.jsonl        # Execution history
+│   └── scripts.json
+└── history.jsonl
 ```
 
-## Security
+## What Is Not Implemented Yet
 
-- **Local First**: All data stored locally by default
-- **Safety Checks**: Scans for dangerous commands before execution
-- **Execution Preview**: Always shows what will run before running it
-- **Audit Trail**: Complete history of who ran what, when, and where
-- **Sandboxed Execution**: Option to run scripts in isolated environments (coming soon)
+These commands exist and respond cleanly but do not do anything useful:
 
-## Roadmap
+- `sv versions`, `sv diff`, `sv checkout` — require a versioning model not yet built
+- `sv share`, `sv team` — require a server
+- `sv sync` — requires a remote backend
+- `sv recommend` — not yet built
+- `sv run --sandbox` — returns an explicit error
 
-### MVP (Current)
-- [x] Save and organize scripts locally
-- [x] Context detection (directory, git)
-- [x] Search and find scripts
-- [x] Safe execution with preview
-- [x] Execution history
-- [ ] Basic CLI polish
-
-### Phase 2
-- [ ] Cloud sync (optional)
-- [ ] Team sharing
-- [ ] Web dashboard
-- [ ] OAuth authentication
-- [ ] Script versioning
-- [ ] Diff between versions
-
-### Phase 3
-- [ ] Public script library
-- [ ] Script templates
-- [ ] AI-powered recommendations
-- [ ] CI/CD integration
-- [ ] Browser extension
-- [ ] VS Code extension
-
-## Contributing
-
-Contributions are welcome! This is an early-stage project and we'd love your help.
-
+## Building from Source
 ```bash
-# Clone the repo
-git clone https://github.com/ricky-ultimate/scriptvault
-cd scriptvault
-
-# Build and test
-cargo build
-cargo test
-
-# Run locally
-cargo run -- save ./test.sh
+./build.sh
+./build.sh --release
+./build.sh --test
+./build.sh --release --install
 ```
 
+## License
 
-## Acknowledgments
-
-Inspired by the daily frustration of losing track of useful scripts. Built with Rust and ❤️.
+MIT
