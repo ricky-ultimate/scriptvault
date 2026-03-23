@@ -3,7 +3,7 @@ use clap::{Args, Parser, Subcommand};
 #[derive(Parser, Debug)]
 #[command(name = "sv")]
 #[command(author = "リッキー")]
-#[command(version = "0.1.0")]
+#[command(version)]
 #[command(about = "ScriptVault - Your terminal script vault", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
@@ -14,6 +14,7 @@ pub struct Cli {
 pub enum Command {
     Auth(AuthCommand),
     Save(SaveArgs),
+    Update(UpdateArgs),
     Find(FindArgs),
     List(ListArgs),
     Info(InfoArgs),
@@ -54,47 +55,58 @@ pub enum AuthAction {
 
 #[derive(Args, Debug)]
 pub struct LoginArgs {
-    #[arg(long)]
+    #[arg(long, value_name = "NAME", help = "Set your local username")]
     pub token: Option<String>,
 }
 
 #[derive(Args, Debug)]
 pub struct SaveArgs {
+    #[arg(value_name = "FILE")]
     pub file: String,
 
-    #[arg(long)]
+    #[arg(long, value_name = "NAME", help = "Override the vault name (defaults to filename stem)")]
     pub name: Option<String>,
 
-    #[arg(long)]
+    #[arg(long, value_name = "TAGS")]
     pub tags: Option<String>,
 
-    #[arg(long)]
+    #[arg(long, value_name = "DESC")]
     pub description: Option<String>,
 
-    #[arg(long)]
+    #[arg(long, help = "Skip interactive prompts")]
     pub yes: bool,
 }
 
 #[derive(Args, Debug)]
+pub struct UpdateArgs {
+    #[arg(value_name = "FILE", help = "Path to the updated script file")]
+    pub file: String,
+
+    #[arg(long, value_name = "NAME", help = "Override vault name lookup (defaults to filename stem)")]
+    pub name: Option<String>,
+}
+
+#[derive(Args, Debug)]
 pub struct FindArgs {
+    #[arg(value_name = "QUERY")]
     pub query: Option<String>,
 
-    #[arg(long)]
+    #[arg(long, help = "Show only scripts relevant to the current directory")]
     pub here: bool,
 
-    #[arg(long)]
+    #[arg(long, value_name = "TAG")]
     pub tag: Option<String>,
 
-    #[arg(long)]
+    #[arg(long, value_name = "LANG")]
     pub language: Option<String>,
 
     #[arg(long)]
     pub team: bool,
 
-    #[arg(long)]
+    #[arg(long, value_name = "REPO")]
     pub git_repo: Option<String>,
 
-    #[arg(long)]
+    #[arg(long, help = "Sort by most recently run")]
     pub recent: bool,
 }
 
@@ -106,7 +118,7 @@ pub struct ListArgs {
     #[arg(long)]
     pub team: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Sort by most recently run")]
     pub recent: bool,
 }
 
@@ -117,23 +129,30 @@ pub struct InfoArgs {
 
 #[derive(Args, Debug)]
 pub struct RunArgs {
+    #[arg(value_name = "SCRIPT")]
     pub script: String,
 
+    #[arg(
+        value_name = "ARGS",
+        trailing_var_arg = true,
+        allow_hyphen_values = true,
+        help = "Arguments passed through to the script"
+    )]
     pub args: Vec<String>,
 
-    #[arg(long)]
+    #[arg(long, help = "Show what would happen without executing")]
     pub dry_run: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Isolated sandbox environment (not yet available)")]
     pub sandbox: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Require confirmation before running")]
     pub confirm: bool,
 
-    #[arg(long)]
+    #[arg(long, short, help = "Show interpreter, path, and arguments before execution")]
     pub verbose: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Non-interactive mode, no prompts")]
     pub ci: bool,
 }
 
@@ -141,7 +160,7 @@ pub struct RunArgs {
 pub struct DeleteArgs {
     pub name: String,
 
-    #[arg(long)]
+    #[arg(long, help = "Skip confirmation prompt")]
     pub yes: bool,
 }
 
@@ -169,12 +188,13 @@ pub struct CopyArgs {
 
 #[derive(Args, Debug)]
 pub struct HistoryArgs {
+    #[arg(value_name = "SCRIPT")]
     pub script: Option<String>,
 
-    #[arg(long)]
+    #[arg(long, help = "Show only failed runs")]
     pub failed: bool,
 
-    #[arg(long)]
+    #[arg(long, help = "Show only the 10 most recent runs")]
     pub recent: bool,
 }
 
