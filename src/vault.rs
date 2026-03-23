@@ -12,6 +12,16 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
 
+fn bump_patch_version(version: &str) -> String {
+    let v = version.trim_start_matches('v');
+    let parts: Vec<u64> = v.split('.').filter_map(|p| p.parse().ok()).collect();
+    if parts.len() == 3 {
+        format!("v{}.{}.{}", parts[0], parts[1], parts[2] + 1)
+    } else {
+        format!("{}.1", version)
+    }
+}
+
 pub fn save_script(args: SaveArgs) -> Result<()> {
     let config = Config::load()?;
     let storage = config.get_storage_backend()?;
@@ -89,13 +99,20 @@ pub fn save_script(args: SaveArgs) -> Result<()> {
     }
 
     if let Some(ref ex) = existing {
-        if ex.metadata.hash == script.metadata.hash
-            && ex.tags == script.tags
-            && ex.description == script.description
-        {
+        let content_changed = ex.metadata.hash != script.metadata.hash;
+        let meta_changed = ex.tags != script.tags || ex.description != script.description;
+
+        if !content_changed && !meta_changed {
             println!("{} No changes: {}", "i".cyan(), script.name.yellow());
             return Ok(());
         }
+
+        if content_changed {
+            script.version = bump_patch_version(&ex.version);
+        } else {
+            script.version = ex.version.clone();
+        }
+
         script.id = ex.id.clone();
         script.created_at = ex.created_at;
         script.metadata.use_count = ex.metadata.use_count;
@@ -119,6 +136,62 @@ pub fn save_script(args: SaveArgs) -> Result<()> {
     if !script.tags.is_empty() {
         println!("  Tags: {}", script.tags.join(", ").cyan());
     }
+
+    Ok(())
+}
+
+pub fn update_script_from_file(args: UpdateArgs) -> Result<()> {
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
+
+    let script_path = Path::new(&args.file);
+    if !script_path.exists() {
+        return Err(anyhow!("File not found: {}", args.file));
+    }
+
+    let derived_name = script_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| anyhow!("Invalid filename"))?
+        .to_string();
+
+    let name = args.name.unwrap_or(derived_name);
+
+    let mut existing = storage.load_script_by_name(&name).map_err(|_| {
+        anyhow!(
+            "Script '{}' not found in vault. Use 'sv save' to add it first.",
+            name
+        )
+    })?;
+
+    let new_content = fs::read_to_string(script_path).context("Failed to read file")?;
+
+    let mut hasher = Sha256::new();
+    hasher.update(new_content.as_bytes());
+    let new_hash = hex::encode(hasher.finalize());
+
+    if new_hash == existing.metadata.hash {
+        println!("{} No changes: {}", "i".cyan(), existing.name.yellow());
+        return Ok(());
+    }
+
+    let old_version = existing.version.clone();
+    existing.version = bump_patch_version(&existing.version);
+    existing.content = new_content.clone();
+    existing.metadata.hash = new_hash;
+    existing.metadata.size_bytes = new_content.len();
+    existing.metadata.line_count = new_content.lines().count();
+    existing.updated_at = Utc::now();
+
+    storage.update_script(&existing)?;
+
+    println!(
+        "{} Updated: {} {} -> {}",
+        "✓".green().bold(),
+        existing.name.yellow(),
+        old_version.dimmed(),
+        existing.version.green()
+    );
 
     Ok(())
 }
@@ -450,6 +523,8 @@ pub fn edit_script(args: EditArgs) -> Result<()> {
         return Ok(());
     }
 
+    let old_version = script.version.clone();
+    script.version = bump_patch_version(&script.version);
     script.content = new_content.clone();
     script.metadata.hash = new_hash;
     script.metadata.size_bytes = new_content.len();
@@ -458,7 +533,13 @@ pub fn edit_script(args: EditArgs) -> Result<()> {
 
     storage.update_script(&script)?;
 
-    println!("{} Updated: {}", "✓".green().bold(), script.name.yellow());
+    println!(
+        "{} Updated: {} {} -> {}",
+        "✓".green().bold(),
+        script.name.yellow(),
+        old_version.dimmed(),
+        script.version.green()
+    );
 
     Ok(())
 }
@@ -506,6 +587,7 @@ pub fn copy_script(args: CopyArgs) -> Result<()> {
     let mut copy = source.clone();
     copy.id = uuid::Uuid::new_v4().to_string();
     copy.name = args.dest.clone();
+    copy.version = "v1.0.0".to_string();
     copy.created_at = Utc::now();
     copy.updated_at = Utc::now();
     copy.metadata.use_count = 0;
