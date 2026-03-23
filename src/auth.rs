@@ -1,5 +1,5 @@
 use crate::cli::LoginArgs;
-use crate::config::Config;
+use crate::config::{AuthMode, Config};
 use crate::constants::default_author;
 use anyhow::Result;
 use colored::*;
@@ -21,10 +21,10 @@ pub fn login(args: LoginArgs) -> Result<()> {
             .interact_text()?
     };
 
-    config.set_auth("local".to_string(), "local_user".to_string(), username.clone());
+    config.set_local_user(username.clone());
     config.save()?;
 
-    println!("{} Username set to: {}", "✓".green().bold(), username.yellow());
+    println!("Username set to: {}", username.yellow());
 
     Ok(())
 }
@@ -33,26 +33,39 @@ pub fn logout() -> Result<()> {
     let mut config = Config::load()?;
     config.clear_auth();
     config.save()?;
-    println!("{} Username cleared", "✓".green().bold());
+    println!("Username cleared");
     Ok(())
 }
 
 pub fn status() -> Result<()> {
     let config = Config::load()?;
 
-    println!("{}", "ScriptVault Local Mode".cyan().bold());
+    println!("{}", "ScriptVault Auth Status".cyan().bold());
     println!();
 
-    if let Some(username) = &config.username {
-        println!("  {}: {}", "Username".bold(), username.yellow());
-    } else {
-        println!(
-            "  {}: {}",
-            "Username".bold(),
-            "not set".dimmed()
-        );
-        println!();
-        println!("  Run 'sv auth login' to set a username");
+    match &config.auth_mode {
+        AuthMode::Local => {
+            println!("  {}: {}", "Mode".bold(), "Local".yellow());
+            if let Some(username) = &config.username {
+                println!("  {}: {}", "Username".bold(), username.yellow());
+            } else {
+                println!("  {}: {}", "Username".bold(), "not set".dimmed());
+                println!();
+                println!("  Run 'sv auth login' to set a username");
+            }
+        }
+        AuthMode::ApiKey => {
+            println!("  {}: {}", "Mode".bold(), "API Key".green());
+            if let Some(username) = &config.username {
+                println!("  {}: {}", "Username".bold(), username.yellow());
+            }
+        }
+        AuthMode::OAuth => {
+            println!("  {}: {}", "Mode".bold(), "OAuth".green());
+            if let Some(username) = &config.username {
+                println!("  {}: {}", "Username".bold(), username.yellow());
+            }
+        }
     }
 
     Ok(())

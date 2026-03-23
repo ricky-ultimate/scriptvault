@@ -319,6 +319,21 @@ pub fn list_scripts(args: ListArgs) -> Result<()> {
         return Ok(());
     }
 
+    if args.mine {
+        if let Some(ref username) = config.username {
+            scripts.retain(|s| s.author == *username);
+        }
+    } else if args.team {
+        scripts.retain(|s| {
+            s.visibility == Visibility::Team || s.visibility == Visibility::Public
+        });
+    }
+
+    if scripts.is_empty() {
+        println!("No scripts found matching your criteria.");
+        return Ok(());
+    }
+
     if args.recent {
         scripts.sort_by(|a, b| b.metadata.last_run.cmp(&a.metadata.last_run));
     } else {
@@ -341,7 +356,6 @@ pub fn list_scripts(args: ListArgs) -> Result<()> {
 
     Ok(())
 }
-
 pub fn show_info(args: InfoArgs) -> Result<()> {
     let config = Config::load()?;
     let storage = config.get_storage_backend()?;

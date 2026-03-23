@@ -21,6 +21,12 @@ pub fn run_script(args: RunArgs) -> Result<()> {
         ));
     }
 
+    if args.update {
+        return Err(anyhow!(
+            "Script updates require cloud sync which is not yet available"
+        ));
+    }
+
     let config = Config::load()?;
     let ci_mode = args.ci || std::env::var(ENV_SCRIPTVAULT_CI).is_ok();
 
@@ -97,10 +103,8 @@ pub fn run_script(args: RunArgs) -> Result<()> {
 
     save_execution_record(&execution)?;
 
-    let prev_count = script.metadata.use_count;
+    let prev_recorded = script.metadata.success_count + script.metadata.failure_count;
     script.metadata.use_count += 1;
-    script.metadata.last_run = Some(execution.executed_at);
-    script.metadata.last_run_by = Some(execution.executed_by.clone());
 
     if exit_code == 0 {
         script.metadata.success_count += 1;
@@ -108,24 +112,27 @@ pub fn run_script(args: RunArgs) -> Result<()> {
         script.metadata.failure_count += 1;
     }
 
+    let new_recorded = script.metadata.success_count + script.metadata.failure_count;
+
     script.metadata.avg_runtime_ms = Some(match script.metadata.avg_runtime_ms {
-        Some(avg) => (avg * prev_count + duration.as_millis() as u64) / script.metadata.use_count,
+        Some(avg) => (avg * prev_recorded + duration.as_millis() as u64) / new_recorded,
         None => duration.as_millis() as u64,
     });
+
+    script.metadata.last_run = Some(execution.executed_at);
+    script.metadata.last_run_by = Some(execution.executed_by.clone());
 
     update_script_metadata(&script)?;
 
     println!();
     if exit_code == 0 {
         println!(
-            "{} Completed in {:.2}s",
-            "✓".green().bold(),
+            "Completed in {:.2}s",
             duration.as_secs_f64()
         );
     } else {
         println!(
-            "{} Failed with exit code {} in {:.2}s",
-            "✗".red().bold(),
+            "Failed with exit code {} in {:.2}s",
             exit_code,
             duration.as_secs_f64()
         );
@@ -286,6 +293,12 @@ fn get_interpreter_command(language: &ScriptLanguage) -> (&'static str, Vec<&'st
 }
 
 pub fn show_history(args: HistoryArgs) -> Result<()> {
+    if args.team {
+        return Err(anyhow!(
+            "Team history requires cloud sync which is not yet available"
+        ));
+    }
+
     let history_path = Config::history_path()?;
 
     if !history_path.exists() {
@@ -310,8 +323,7 @@ pub fn show_history(args: HistoryArgs) -> Result<()> {
         let found = scripts.iter().any(|s| s.name == *script_name);
         if !found {
             println!(
-                "{} '{}' is not in your vault (it may have been deleted).",
-                "Note:".yellow(),
+                "Note: '{}' is not in your vault (it may have been deleted).",
                 script_name
             );
             println!("History for deleted scripts cannot be filtered by name.");

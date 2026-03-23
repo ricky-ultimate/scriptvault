@@ -16,6 +16,7 @@ pub enum Command {
     Save(SaveArgs),
     Update(UpdateArgs),
     Find(FindArgs),
+    Search(FindArgs),
     List(ListArgs),
     Info(InfoArgs),
     Run(RunArgs),
@@ -118,6 +119,9 @@ pub struct ListArgs {
     #[arg(long)]
     pub team: bool,
 
+    #[arg(long)]
+    pub all: bool,
+
     #[arg(long, help = "Sort by most recently run")]
     pub recent: bool,
 }
@@ -154,6 +158,9 @@ pub struct RunArgs {
 
     #[arg(long, help = "Non-interactive mode, no prompts")]
     pub ci: bool,
+
+    #[arg(long, help = "Pull latest version before running (requires cloud sync)")]
+    pub update: bool,
 }
 
 #[derive(Args, Debug)]
@@ -196,6 +203,9 @@ pub struct HistoryArgs {
 
     #[arg(long, help = "Show only the 10 most recent runs")]
     pub recent: bool,
+
+    #[arg(long, help = "Show team execution history (requires cloud sync)")]
+    pub team: bool,
 }
 
 #[derive(Args, Debug)]

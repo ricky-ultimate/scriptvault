@@ -27,13 +27,22 @@ mod tests {
             assert_eq!(ScriptLanguage::from_extension("sh"), ScriptLanguage::Shell);
             assert_eq!(ScriptLanguage::from_extension("bash"), ScriptLanguage::Bash);
             assert_eq!(ScriptLanguage::from_extension("py"), ScriptLanguage::Python);
-            assert_eq!(ScriptLanguage::from_extension("js"), ScriptLanguage::JavaScript);
+            assert_eq!(
+                ScriptLanguage::from_extension("js"),
+                ScriptLanguage::JavaScript
+            );
             assert_eq!(ScriptLanguage::from_extension("rb"), ScriptLanguage::Ruby);
             assert_eq!(ScriptLanguage::from_extension("pl"), ScriptLanguage::Perl);
-            assert_eq!(ScriptLanguage::from_extension("ps1"), ScriptLanguage::PowerShell);
+            assert_eq!(
+                ScriptLanguage::from_extension("ps1"),
+                ScriptLanguage::PowerShell
+            );
             assert_eq!(ScriptLanguage::from_extension("bat"), ScriptLanguage::Batch);
             assert_eq!(ScriptLanguage::from_extension("cmd"), ScriptLanguage::Batch);
-            assert_eq!(ScriptLanguage::from_extension("xyz"), ScriptLanguage::Unknown);
+            assert_eq!(
+                ScriptLanguage::from_extension("xyz"),
+                ScriptLanguage::Unknown
+            );
         }
 
         #[test]
@@ -46,8 +55,14 @@ mod tests {
 
         #[test]
         fn test_shebang() {
-            assert_eq!(ScriptLanguage::Bash.get_shebang(), Some("#!/usr/bin/env bash"));
-            assert_eq!(ScriptLanguage::Python.get_shebang(), Some("#!/usr/bin/env python3"));
+            assert_eq!(
+                ScriptLanguage::Bash.get_shebang(),
+                Some("#!/usr/bin/env bash")
+            );
+            assert_eq!(
+                ScriptLanguage::Python.get_shebang(),
+                Some("#!/usr/bin/env python3")
+            );
             assert_eq!(ScriptLanguage::Shell.get_shebang(), Some("#!/bin/sh"));
             assert_eq!(ScriptLanguage::PowerShell.get_shebang(), None);
         }
@@ -99,13 +114,21 @@ mod tests {
 
         #[test]
         fn test_success_rate_zero_runs() {
-            let script = Script::new("test".to_string(), "echo test".to_string(), ScriptLanguage::Bash);
+            let script = Script::new(
+                "test".to_string(),
+                "echo test".to_string(),
+                ScriptLanguage::Bash,
+            );
             assert_eq!(script.success_rate(), 0.0);
         }
 
         #[test]
         fn test_success_rate_calculation() {
-            let mut script = Script::new("test".to_string(), "echo test".to_string(), ScriptLanguage::Bash);
+            let mut script = Script::new(
+                "test".to_string(),
+                "echo test".to_string(),
+                ScriptLanguage::Bash,
+            );
             script.metadata.success_count = 8;
             script.metadata.failure_count = 2;
             assert_eq!(script.success_rate(), 80.0);
@@ -272,18 +295,27 @@ mod tests {
         }
 
         #[test]
-        fn test_is_authenticated_true() {
+        fn test_local_user_not_authenticated() {
             let mut config = Config::default();
-            config.set_auth("t".to_string(), "u".to_string(), "n".to_string());
+            config.set_local_user("testuser".to_string());
+            assert!(!config.is_authenticated());
+            assert!(config.has_identity());
+        }
+
+        #[test]
+        fn test_api_key_is_authenticated() {
+            let mut config = Config::default();
+            config.set_api_key("t".to_string(), "u".to_string(), "n".to_string());
             assert!(config.is_authenticated());
         }
 
         #[test]
         fn test_clear_auth() {
             let mut config = Config::default();
-            config.set_auth("t".to_string(), "u".to_string(), "n".to_string());
+            config.set_api_key("t".to_string(), "u".to_string(), "n".to_string());
             config.clear_auth();
             assert!(!config.is_authenticated());
+            assert!(!config.has_identity());
         }
     }
 }
