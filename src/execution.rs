@@ -202,9 +202,14 @@ fn execute_script(script: &Script, args: &[String], verbose: bool) -> Result<Exe
 
     if verbose {
         println!("  Interpreter: {}", interpreter);
-        println!("  Script: {}", script_path.display());
+        println!("  Script path: {}", script_path.display());
         if !args.is_empty() {
-            println!("  Arguments: {}", args.join(" "));
+            println!("  Arguments:   {}", args.join(" "));
+        }
+        println!();
+        println!("  {}:", "Content".dimmed());
+        for line in script.content.lines() {
+            println!("    {}", line.dimmed());
         }
         println!();
     }
