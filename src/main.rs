@@ -32,6 +32,7 @@ fn run() -> Result<()> {
             AuthAction::Status => auth::status()?,
         },
         Command::Save(args) => vault::save_script(args)?,
+        Command::Update(args) => vault::update_script_from_file(args)?,
         Command::Find(args) => vault::find_scripts(args)?,
         Command::List(args) => vault::list_scripts(args)?,
         Command::Info(args) => vault::show_info(args)?,
