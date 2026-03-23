@@ -1,19 +1,30 @@
 use crate::cli::LoginArgs;
 use crate::config::Config;
+use crate::constants::default_author;
 use anyhow::Result;
 use colored::*;
+use dialoguer::Input;
 
 pub fn login(args: LoginArgs) -> Result<()> {
     let mut config = Config::load()?;
 
-    if let Some(token) = args.token {
-        config.set_auth(token, "local_user".to_string(), "LocalUser".to_string());
-        config.save()?;
-        println!("{} Authenticated", "✓".green().bold());
+    let username = if let Some(name) = args.token {
+        if name == "local" {
+            default_author()
+        } else {
+            name
+        }
     } else {
-        println!("{}", "OAuth is not yet implemented. Use --token:".yellow());
-        println!("  sv auth login --token YOUR_API_KEY");
-    }
+        Input::new()
+            .with_prompt("Username")
+            .default(default_author())
+            .interact_text()?
+    };
+
+    config.set_auth("local".to_string(), "local_user".to_string(), username.clone());
+    config.save()?;
+
+    println!("{} Username set to: {}", "✓".green().bold(), username.yellow());
 
     Ok(())
 }
@@ -22,28 +33,26 @@ pub fn logout() -> Result<()> {
     let mut config = Config::load()?;
     config.clear_auth();
     config.save()?;
-    println!("{} Logged out", "✓".green().bold());
+    println!("{} Username cleared", "✓".green().bold());
     Ok(())
 }
 
 pub fn status() -> Result<()> {
     let config = Config::load()?;
 
-    println!("{}", "Authentication Status".cyan().bold());
+    println!("{}", "ScriptVault Local Mode".cyan().bold());
     println!();
 
-    if config.is_authenticated() {
-        println!("  {}: {}", "Status".bold(), "Authenticated".green());
-        if let Some(username) = &config.username {
-            println!("  {}: {}", "User".bold(), username.yellow());
-        }
-        if let Some(user_id) = &config.user_id {
-            println!("  {}: {}", "User ID".bold(), user_id.dimmed());
-        }
+    if let Some(username) = &config.username {
+        println!("  {}: {}", "Username".bold(), username.yellow());
     } else {
-        println!("  {}: {}", "Status".bold(), "Not authenticated".red());
+        println!(
+            "  {}: {}",
+            "Username".bold(),
+            "not set".dimmed()
+        );
         println!();
-        println!("  Run 'sv auth login --token <token>' to authenticate");
+        println!("  Run 'sv auth login' to set a username");
     }
 
     Ok(())
