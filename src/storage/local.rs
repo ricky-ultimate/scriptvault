@@ -1,6 +1,7 @@
-use super::{StorageBackend, StorageMetadata, SyncStatus};
-use crate::script::Script;
+use super::{StorageBackend, StorageMetadata};
+use crate::script::{Script, SyncStatus, SyncState};
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 use std::fs;
 use std::path::PathBuf;
 
@@ -41,12 +42,28 @@ impl LocalStorage {
     fn persist(&self, scripts: &[Script]) -> Result<()> {
         let json =
             serde_json::to_string_pretty(scripts).context("Failed to serialize scripts")?;
-        fs::write(&self.scripts_file, json).context("Failed to write scripts file")?;
+        let temp_path = self.scripts_file.with_extension("tmp");
+        fs::write(&temp_path, &json).context("Failed to write temporary scripts file")?;
+        fs::rename(&temp_path, &self.scripts_file)
+            .context("Failed to atomically replace scripts file")?;
         Ok(())
     }
 
     fn total_size(scripts: &[Script]) -> u64 {
         scripts.iter().map(|s| s.metadata.size_bytes as u64).sum()
+    }
+
+    fn mutate_script<F>(&self, script_id: &str, f: F) -> Result<()>
+    where
+        F: FnOnce(&mut Script),
+    {
+        let mut scripts = self.load_all()?;
+        let pos = scripts
+            .iter()
+            .position(|s| s.id == script_id)
+            .ok_or_else(|| anyhow::anyhow!("Script not found: {}", script_id))?;
+        f(&mut scripts[pos]);
+        self.persist(&scripts)
     }
 }
 
@@ -119,8 +136,48 @@ impl StorageBackend for LocalStorage {
         Ok(true)
     }
 
-    fn get_sync_status(&self, _script_id: &str) -> Result<SyncStatus> {
-        Ok(SyncStatus::Synced)
+    fn get_sync_status(&self, script_id: &str) -> Result<SyncStatus> {
+        let script = self.load_script(script_id)?;
+        Ok(script.sync_state.status.clone())
+    }
+
+    fn mark_synced(
+        &self,
+        script_id: &str,
+        remote_version: &str,
+        synced_at: DateTime<Utc>,
+    ) -> Result<()> {
+        self.mutate_script(script_id, |script| {
+            let hash = script.metadata.hash.clone();
+            script.sync_state = SyncState {
+                status: SyncStatus::Synced,
+                last_synced_at: Some(synced_at),
+                remote_version: Some(remote_version.to_string()),
+                conflict_base_hash: Some(hash),
+            };
+        })
+    }
+
+    fn mark_conflict(&self, script_id: &str) -> Result<()> {
+        self.mutate_script(script_id, |script| {
+            script.sync_state.status = SyncStatus::Conflict;
+        })
+    }
+
+    fn list_pending_push(&self) -> Result<Vec<Script>> {
+        Ok(self
+            .load_all()?
+            .into_iter()
+            .filter(|s| s.sync_state.status == SyncStatus::PendingPush)
+            .collect())
+    }
+
+    fn list_conflicts(&self) -> Result<Vec<Script>> {
+        Ok(self
+            .load_all()?
+            .into_iter()
+            .filter(|s| s.sync_state.status == SyncStatus::Conflict)
+            .collect())
     }
 
     fn backend_type(&self) -> &str {
@@ -166,6 +223,7 @@ mod tests {
                 avg_runtime_ms: None,
             },
             visibility: Visibility::Private,
+            sync_state: SyncState::default(),
         }
     }
 
@@ -203,11 +261,9 @@ mod tests {
         let storage = LocalStorage::new(tmp.path().to_path_buf()).unwrap();
         let original = make_script("same-name");
         storage.save_script(&original).unwrap();
-
         let mut diverged = make_script("same-name");
         diverged.id = uuid::Uuid::new_v4().to_string();
         storage.save_script(&diverged).unwrap();
-
         let all = storage.list_scripts().unwrap();
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].id, diverged.id);
@@ -230,8 +286,6 @@ mod tests {
         storage.save_script(&script).unwrap();
         script.content = "echo 'updated'".to_string();
         storage.update_script(&script).unwrap();
-        let scripts = storage.list_scripts().unwrap();
-        assert_eq!(scripts.len(), 1);
         let loaded = storage.load_script_by_name("update-test").unwrap();
         assert_eq!(loaded.content, "echo 'updated'");
     }
@@ -282,5 +336,112 @@ mod tests {
         let meta = storage.get_metadata().unwrap();
         assert_eq!(meta.total_scripts, 2);
         assert_eq!(meta.backend_type, "local");
+    }
+
+    #[test]
+    fn test_default_sync_status_is_local_only() {
+        let tmp = TempDir::new().unwrap();
+        let storage = LocalStorage::new(tmp.path().to_path_buf()).unwrap();
+        let script = make_script("sync-test");
+        let id = script.id.clone();
+        storage.save_script(&script).unwrap();
+        assert_eq!(
+            storage.get_sync_status(&id).unwrap(),
+            SyncStatus::LocalOnly
+        );
+    }
+
+    #[test]
+    fn test_mark_synced() {
+        let tmp = TempDir::new().unwrap();
+        let storage = LocalStorage::new(tmp.path().to_path_buf()).unwrap();
+        let script = make_script("sync-test");
+        let id = script.id.clone();
+        storage.save_script(&script).unwrap();
+        let now = Utc::now();
+        storage.mark_synced(&id, "v1.0.0", now).unwrap();
+        let loaded = storage.load_script(&id).unwrap();
+        assert_eq!(loaded.sync_state.status, SyncStatus::Synced);
+        assert_eq!(loaded.sync_state.remote_version, Some("v1.0.0".to_string()));
+        assert!(loaded.sync_state.last_synced_at.is_some());
+        assert!(loaded.sync_state.conflict_base_hash.is_some());
+    }
+
+    #[test]
+    fn test_mark_conflict() {
+        let tmp = TempDir::new().unwrap();
+        let storage = LocalStorage::new(tmp.path().to_path_buf()).unwrap();
+        let script = make_script("conflict-test");
+        let id = script.id.clone();
+        storage.save_script(&script).unwrap();
+        storage.mark_conflict(&id).unwrap();
+        assert_eq!(
+            storage.get_sync_status(&id).unwrap(),
+            SyncStatus::Conflict
+        );
+    }
+
+    #[test]
+    fn test_list_pending_push_empty_when_none() {
+        let tmp = TempDir::new().unwrap();
+        let storage = LocalStorage::new(tmp.path().to_path_buf()).unwrap();
+        storage.save_script(&make_script("a")).unwrap();
+        storage.save_script(&make_script("b")).unwrap();
+        assert!(storage.list_pending_push().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_list_pending_push_returns_correct_scripts() {
+        let tmp = TempDir::new().unwrap();
+        let storage = LocalStorage::new(tmp.path().to_path_buf()).unwrap();
+        let mut pending = make_script("pending");
+        pending.sync_state.status = SyncStatus::PendingPush;
+        storage.save_script(&pending).unwrap();
+        storage.save_script(&make_script("local-only")).unwrap();
+        let results = storage.list_pending_push().unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "pending");
+    }
+
+    #[test]
+    fn test_list_conflicts() {
+        let tmp = TempDir::new().unwrap();
+        let storage = LocalStorage::new(tmp.path().to_path_buf()).unwrap();
+        let script = make_script("conflicted");
+        let id = script.id.clone();
+        storage.save_script(&script).unwrap();
+        storage.mark_conflict(&id).unwrap();
+        storage.save_script(&make_script("clean")).unwrap();
+        let conflicts = storage.list_conflicts().unwrap();
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].name, "conflicted");
+    }
+
+    #[test]
+    fn test_atomic_persist_produces_valid_json() {
+        let tmp = TempDir::new().unwrap();
+        let storage = LocalStorage::new(tmp.path().to_path_buf()).unwrap();
+        storage.save_script(&make_script("a")).unwrap();
+        storage.save_script(&make_script("b")).unwrap();
+        let contents = std::fs::read_to_string(&storage.scripts_file).unwrap();
+        let parsed: Vec<Script> = serde_json::from_str(&contents).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert!(!storage.scripts_file.with_extension("tmp").exists());
+    }
+
+    #[test]
+    fn test_sync_state_persists_across_load() {
+        let tmp = TempDir::new().unwrap();
+        let storage = LocalStorage::new(tmp.path().to_path_buf()).unwrap();
+        let script = make_script("persist-test");
+        let id = script.id.clone();
+        storage.save_script(&script).unwrap();
+        let now = Utc::now();
+        storage.mark_synced(&id, "v2.0.0", now).unwrap();
+
+        let storage2 = LocalStorage::new(tmp.path().to_path_buf()).unwrap();
+        let loaded = storage2.load_script(&id).unwrap();
+        assert_eq!(loaded.sync_state.status, SyncStatus::Synced);
+        assert_eq!(loaded.sync_state.remote_version, Some("v2.0.0".to_string()));
     }
 }

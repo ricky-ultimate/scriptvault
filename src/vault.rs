@@ -2,8 +2,7 @@ use crate::cli::ExportArgs;
 use crate::cli::*;
 use crate::config::Config;
 use crate::context;
-use crate::script::{Script, ScriptLanguage, Visibility};
-use crate::storage::StorageBackend;
+use crate::script::{Script, ScriptLanguage, SyncStatus, Visibility};
 use anyhow::{Context as _, Result, anyhow};
 use chrono::Utc;
 use colored::*;
@@ -121,8 +120,18 @@ pub fn save_script(args: SaveArgs) -> Result<()> {
         script.metadata.last_run = ex.metadata.last_run;
         script.metadata.last_run_by = ex.metadata.last_run_by.clone();
         script.metadata.avg_runtime_ms = ex.metadata.avg_runtime_ms;
-    }
 
+        script.sync_state = ex.sync_state.clone();
+        if content_changed || meta_changed {
+            match ex.sync_state.status {
+                SyncStatus::Synced => script.sync_state.status = SyncStatus::PendingPush,
+                SyncStatus::PendingPull | SyncStatus::RemoteOnly => {
+                    script.sync_state.status = SyncStatus::Conflict
+                }
+                SyncStatus::PendingPush | SyncStatus::LocalOnly | SyncStatus::Conflict => {}
+            }
+        }
+    }
     storage.save_script(&script)?;
 
     println!();
@@ -183,6 +192,14 @@ pub fn update_script_from_file(args: UpdateArgs) -> Result<()> {
     existing.metadata.line_count = new_content.lines().count();
     existing.updated_at = Utc::now();
 
+    match existing.sync_state.status {
+        SyncStatus::Synced => existing.sync_state.status = SyncStatus::PendingPush,
+        SyncStatus::PendingPull | SyncStatus::RemoteOnly => {
+            existing.sync_state.status = SyncStatus::Conflict
+        }
+        SyncStatus::PendingPush | SyncStatus::LocalOnly | SyncStatus::Conflict => {}
+    }
+
     storage.update_script(&existing)?;
 
     println!(
@@ -195,7 +212,6 @@ pub fn update_script_from_file(args: UpdateArgs) -> Result<()> {
 
     Ok(())
 }
-
 pub fn find_scripts(args: FindArgs) -> Result<()> {
     let config = Config::load()?;
     let storage = config.get_storage_backend()?;
@@ -324,9 +340,7 @@ pub fn list_scripts(args: ListArgs) -> Result<()> {
             scripts.retain(|s| s.author == *username);
         }
     } else if args.team {
-        scripts.retain(|s| {
-            s.visibility == Visibility::Team || s.visibility == Visibility::Public
-        });
+        scripts.retain(|s| s.visibility == Visibility::Team || s.visibility == Visibility::Public);
     }
 
     if scripts.is_empty() {
@@ -544,6 +558,14 @@ pub fn edit_script(args: EditArgs) -> Result<()> {
     script.metadata.size_bytes = new_content.len();
     script.metadata.line_count = new_content.lines().count();
     script.updated_at = Utc::now();
+
+    match script.sync_state.status {
+        SyncStatus::Synced => script.sync_state.status = SyncStatus::PendingPush,
+        SyncStatus::PendingPull | SyncStatus::RemoteOnly => {
+            script.sync_state.status = SyncStatus::Conflict
+        }
+        SyncStatus::PendingPush | SyncStatus::LocalOnly | SyncStatus::Conflict => {}
+    }
 
     storage.update_script(&script)?;
 

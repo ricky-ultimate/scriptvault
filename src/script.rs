@@ -4,6 +4,44 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum SyncStatus {
+    Synced,
+    LocalOnly,
+    RemoteOnly,
+    PendingPush,
+    PendingPull,
+    Conflict,
+}
+
+impl Default for SyncStatus {
+    fn default() -> Self {
+        Self::LocalOnly
+    }
+}
+
+impl fmt::Display for SyncStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Self::Synced => "synced",
+            Self::LocalOnly => "local-only",
+            Self::RemoteOnly => "remote-only",
+            Self::PendingPush => "pending-push",
+            Self::PendingPull => "pending-pull",
+            Self::Conflict => "conflict",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SyncState {
+    pub status: SyncStatus,
+    pub last_synced_at: Option<DateTime<Utc>>,
+    pub remote_version: Option<String>,
+    pub conflict_base_hash: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Script {
     pub id: String,
@@ -19,6 +57,8 @@ pub struct Script {
     pub context: ScriptContext,
     pub metadata: ScriptMetadata,
     pub visibility: Visibility,
+    #[serde(default)]
+    pub sync_state: SyncState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -185,6 +225,7 @@ impl Script {
                 avg_runtime_ms: None,
             },
             visibility: Visibility::Private,
+            sync_state: SyncState::default(),
         }
     }
 

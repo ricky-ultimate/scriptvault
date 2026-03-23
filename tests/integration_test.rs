@@ -1,7 +1,7 @@
 use chrono::Utc;
 use scriptvault::context::{contexts_match, normalize_git_url};
 use scriptvault::script::{
-    ExecutionRecord, Script, ScriptContext, ScriptLanguage, ScriptMetadata, Visibility,
+    ExecutionRecord, Script, ScriptContext, ScriptLanguage, ScriptMetadata, SyncState, Visibility,
 };
 use scriptvault::storage::local::LocalStorage;
 use scriptvault::storage::StorageBackend;
@@ -38,9 +38,9 @@ fn make_script(name: &str, content: &str) -> Script {
             avg_runtime_ms: None,
         },
         visibility: Visibility::Private,
+        sync_state: SyncState::default(),
     }
 }
-
 fn storage(tmp: &TempDir) -> LocalStorage {
     LocalStorage::new(tmp.path().to_path_buf()).unwrap()
 }

@@ -10,9 +10,9 @@ mod sync;
 mod utils;
 mod vault;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::Parser;
-use cli::{AuthAction, Cli, Command, TeamAction};
+use cli::{AuthAction, Cli, Command, SyncAction, TeamAction};
 use colored::*;
 
 fn main() {
@@ -56,7 +56,23 @@ fn run() -> Result<()> {
         Command::Context => context::show_context()?,
         Command::Recommend => vault::recommend_scripts()?,
         Command::Export(args) => vault::export_scripts(args)?,
-        Command::Sync => sync::sync_vault()?,
+        Command::Sync(sync_cmd) => match sync_cmd.action {
+            None | Some(SyncAction::Push) => sync::push_all()?,
+            Some(SyncAction::Pull) => sync::pull_all()?,
+            Some(SyncAction::Status) => sync::show_status()?,
+            Some(SyncAction::Resolve(args)) => {
+                let resolution = if args.take_local {
+                    sync::ConflictResolution::TakeLocal
+                } else if args.take_remote {
+                    sync::ConflictResolution::TakeRemote
+                } else {
+                    return Err(anyhow!(
+                        "Specify --take-local or --take-remote to resolve the conflict"
+                    ));
+                };
+                sync::resolve_conflict(&args.script, resolution)?;
+            }
+        },
         Command::Storage(storage_cmd) => {
             storage::commands::handle_storage_command(storage_cmd.action)?
         }

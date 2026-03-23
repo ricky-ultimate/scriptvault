@@ -11,7 +11,9 @@ pub mod utils;
 pub mod vault;
 
 pub use config::Config;
-pub use script::{ExecutionRecord, Script, ScriptContext, ScriptLanguage, Visibility};
+pub use script::{ExecutionRecord, Script, ScriptContext, ScriptLanguage, SyncState, SyncStatus, Visibility};
+pub use sync::manager::{ConflictResolution, SyncManager, SyncReport};
+pub use sync::remote::RemoteBackend;
 
 #[cfg(test)]
 mod tests {

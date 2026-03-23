@@ -35,7 +35,7 @@ pub enum Command {
     Context,
     Recommend,
     Export(ExportArgs),
-    Sync,
+    Sync(SyncCommand),
     Storage(StorageCommand),
     Doctor,
     Status,
@@ -261,6 +261,31 @@ pub struct ExportArgs {
 
     #[arg(long, short)]
     pub output: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct SyncCommand {
+    #[command(subcommand)]
+    pub action: Option<SyncAction>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SyncAction {
+    Status,
+    Push,
+    Pull,
+    Resolve(ResolveArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct ResolveArgs {
+    pub script: String,
+
+    #[arg(long, conflicts_with = "take_remote")]
+    pub take_local: bool,
+
+    #[arg(long, conflicts_with = "take_local")]
+    pub take_remote: bool,
 }
 
 #[derive(Args, Debug)]

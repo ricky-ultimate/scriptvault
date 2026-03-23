@@ -1,8 +1,9 @@
 pub mod commands;
 pub mod local;
 
-use crate::script::Script;
+use crate::script::{Script, SyncStatus};
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -23,14 +24,8 @@ impl Default for StorageConfig {
 pub struct StorageMetadata {
     pub total_scripts: usize,
     pub total_size_bytes: u64,
-    pub last_sync: Option<chrono::DateTime<chrono::Utc>>,
+    pub last_sync: Option<DateTime<Utc>>,
     pub backend_type: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum SyncStatus {
-    Synced,
-    LocalOnly,
 }
 
 pub trait StorageBackend: Send + Sync {
@@ -44,6 +39,15 @@ pub trait StorageBackend: Send + Sync {
     fn get_metadata(&self) -> Result<StorageMetadata>;
     fn health_check(&self) -> Result<bool>;
     fn get_sync_status(&self, script_id: &str) -> Result<SyncStatus>;
+    fn mark_synced(
+        &self,
+        script_id: &str,
+        remote_version: &str,
+        synced_at: DateTime<Utc>,
+    ) -> Result<()>;
+    fn mark_conflict(&self, script_id: &str) -> Result<()>;
+    fn list_pending_push(&self) -> Result<Vec<Script>>;
+    fn list_conflicts(&self) -> Result<Vec<Script>>;
     fn backend_type(&self) -> &str;
 }
 
