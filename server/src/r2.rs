@@ -1,10 +1,10 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use aws_credential_types::Credentials;
 use aws_sdk_s3::{
-    config::{Builder, Region},
+    Client,
+    config::{BehaviorVersion, Builder, Region},
     operation::get_object::GetObjectError,
     primitives::ByteStream,
-    Client,
 };
 use serde_json::Value;
 
@@ -20,19 +20,12 @@ impl R2Client {
         secret_access_key: &str,
         bucket: &str,
     ) -> Self {
-        let credentials = Credentials::new(
-            access_key_id,
-            secret_access_key,
-            None,
-            None,
-            "scriptvault",
-        );
+        let credentials =
+            Credentials::new(access_key_id, secret_access_key, None, None, "scriptvault");
 
         let config = Builder::new()
-            .endpoint_url(format!(
-                "https://{}.r2.cloudflarestorage.com",
-                account_id
-            ))
+            .behavior_version(BehaviorVersion::latest())
+            .endpoint_url(format!("https://{}.r2.cloudflarestorage.com", account_id))
             .region(Region::new("auto"))
             .credentials_provider(credentials)
             .force_path_style(false)
