@@ -1,7 +1,7 @@
 pub mod manager;
 pub mod remote;
 
-pub use manager::{ConflictResolution, ScriptSyncStatus, SyncManager, SyncReport};
+pub use manager::{ConflictResolution, SyncManager, SyncReport};
 pub use remote::RemoteBackend;
 
 use crate::config::Config;
@@ -25,6 +25,7 @@ fn build_manager() -> Result<SyncManager> {
     Ok(SyncManager::new(local, Box::new(remote)))
 }
 
+#[allow(dead_code)]
 pub fn sync_vault() -> Result<()> {
     let manager = build_manager()?;
     let report = manager.full_sync()?;
@@ -138,8 +139,11 @@ fn print_report(report: &SyncReport) {
     if !report.conflicts.is_empty() {
         println!("Conflicts ({}):", report.conflicts.len());
         for name in &report.conflicts {
-            println!("  {} - resolve with 'sv sync resolve {} --take-local|--take-remote'",
-                name.red(), name);
+            println!(
+                "  {} - resolve with 'sv sync resolve {} --take-local|--take-remote'",
+                name.red(),
+                name
+            );
         }
     }
 

@@ -4,6 +4,7 @@ pub const DEFAULT_VERSION: &str = "v1.0.0";
 pub const DEFAULT_VISIBILITY: &str = "private";
 pub const SCRIPTVAULT_DIR: &str = ".scriptvault";
 pub const CONFIG_FILE: &str = "config.json";
+#[allow(dead_code)]
 pub const SCRIPTS_FILE: &str = "scripts.json";
 pub const HISTORY_FILE: &str = "history.jsonl";
 pub const VAULT_DIR: &str = "vault";
@@ -24,6 +25,7 @@ pub const DANGEROUS_PATTERNS: &[&str] = &[
     ":(){:|:&};:",
 ];
 
+#[allow(dead_code)]
 pub const SUPPORTED_EXTENSIONS: &[&str] =
     &["sh", "bash", "py", "js", "rb", "pl", "ps1", "bat", "cmd"];
 
@@ -37,10 +39,15 @@ pub const RUBY_INTERPRETER: &str = "ruby";
 pub const PERL_INTERPRETER: &str = "perl";
 pub const POWERSHELL_INTERPRETER: &str = "powershell";
 
+#[allow(dead_code)]
 pub const BASH_SHEBANG: &str = "#!/usr/bin/env bash";
+#[allow(dead_code)]
 pub const SHELL_SHEBANG: &str = "#!/bin/sh";
+#[allow(dead_code)]
 pub const PYTHON_SHEBANG: &str = "#!/usr/bin/env python3";
+#[allow(dead_code)]
 pub const RUBY_SHEBANG: &str = "#!/usr/bin/env ruby";
+#[allow(dead_code)]
 pub const PERL_SHEBANG: &str = "#!/usr/bin/env perl";
 
 pub fn default_author() -> String {
@@ -51,5 +58,5 @@ pub fn default_author() -> String {
 
 pub fn api_endpoint() -> String {
     env::var("SCRIPTVAULT_API_ENDPOINT")
-        .unwrap_or_else(|_| "https://api.scriptvault.dev".to_string())
+        .unwrap_or_else(|_| "https://scriptvault-api.fly.dev".to_string())
 }

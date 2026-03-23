@@ -32,6 +32,7 @@ git2 = "0.18"
 dialoguer = "0.11"
 which = "6.0"
 uuid = { version = "1.11", features = ["v4"] }
+ureq = { version = "2", features = ["json"] }
 
 [dev-dependencies]
 tempfile = "3.10"

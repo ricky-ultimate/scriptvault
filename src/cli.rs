@@ -52,6 +52,13 @@ pub enum AuthAction {
     Login(LoginArgs),
     Logout,
     Status,
+    Register(RegisterArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct RegisterArgs {
+    #[arg(long, value_name = "USERNAME")]
+    pub username: Option<String>,
 }
 
 #[derive(Args, Debug)]

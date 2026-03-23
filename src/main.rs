@@ -10,7 +10,7 @@ mod sync;
 mod utils;
 mod vault;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use clap::Parser;
 use cli::{AuthAction, Cli, Command, SyncAction, TeamAction};
 use colored::*;
@@ -30,6 +30,7 @@ fn run() -> Result<()> {
             AuthAction::Login(args) => auth::login(args)?,
             AuthAction::Logout => auth::logout()?,
             AuthAction::Status => auth::status()?,
+            AuthAction::Register(args) => auth::register(args)?,
         },
         Command::Save(args) => vault::save_script(args)?,
         Command::Update(args) => vault::update_script_from_file(args)?,

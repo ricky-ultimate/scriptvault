@@ -106,10 +106,10 @@ impl Config {
         Ok(dir)
     }
 
+    #[allow(dead_code)]
     pub fn scripts_path() -> Result<PathBuf> {
         Ok(Self::vault_dir()?.join(SCRIPTS_FILE))
     }
-
     pub fn history_path() -> Result<PathBuf> {
         Ok(Self::data_dir()?.join(HISTORY_FILE))
     }
@@ -119,11 +119,10 @@ impl Config {
     }
 
     pub fn is_authenticated(&self) -> bool {
-        self.auth_mode != AuthMode::Local
-            && self.auth_token.is_some()
-            && self.user_id.is_some()
+        self.auth_mode != AuthMode::Local && self.auth_token.is_some() && self.user_id.is_some()
     }
 
+    #[allow(dead_code)]
     pub fn has_identity(&self) -> bool {
         self.username.is_some()
     }
@@ -142,6 +141,7 @@ impl Config {
         self.username = Some(username);
     }
 
+    #[allow(dead_code)]
     pub fn set_oauth(&mut self, token: String, user_id: String, username: String) {
         self.auth_mode = AuthMode::OAuth;
         self.auth_token = Some(token);

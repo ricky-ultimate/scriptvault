@@ -90,7 +90,7 @@ fn test_resave_diverged_id_replaces_by_name() {
     let original = make_script("deploy", "echo original");
     s.save_script(&original).unwrap();
 
-    let mut diverged = make_script("deploy", "echo diverged");
+    let diverged = make_script("deploy", "echo diverged");
     s.save_script(&diverged).unwrap();
 
     let all = s.list_scripts().unwrap();

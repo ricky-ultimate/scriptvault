@@ -28,6 +28,7 @@ pub struct StorageMetadata {
     pub backend_type: String,
 }
 
+#[allow(dead_code)]
 pub trait StorageBackend: Send + Sync {
     fn save_script(&self, script: &Script) -> Result<()>;
     fn update_script(&self, script: &Script) -> Result<()>;

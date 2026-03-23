@@ -20,6 +20,7 @@ pub struct SyncReport {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ScriptSyncStatus {
     pub name: String,
     pub version: String,
@@ -173,6 +174,7 @@ impl SyncManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn show_status(&self) -> Result<Vec<ScriptSyncStatus>> {
         let scripts = self.local.list_scripts()?;
         Ok(scripts
