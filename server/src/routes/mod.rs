@@ -1,5 +1,5 @@
 pub mod auth;
-pub mod vault;
+pub mod scripts;
 
 use axum::{response::IntoResponse, Json};
 use serde_json::json;
