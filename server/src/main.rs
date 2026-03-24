@@ -6,8 +6,8 @@ mod routes;
 mod state;
 
 use axum::{
-    routing::{get, post, put},
     Router,
+    routing::{get, post, put},
 };
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
@@ -25,8 +25,7 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let database_url = std::env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set");
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -51,8 +50,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(routes::health))
         .route("/auth/register", post(routes::auth::register))
         .route("/auth/me", get(routes::auth::me))
-        .route("/vault", get(routes::vault::get_vault))
-        .route("/vault", put(routes::vault::put_vault))
+        .route("/scripts", get(routes::scripts::list_scripts))
+        .route("/scripts/:id", get(routes::scripts::get_script))
+        .route("/scripts/:id", put(routes::scripts::put_script))
+        .route("/scripts/:id", delete(routes::scripts::delete_script))
         .with_state(state);
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "8080".into());
