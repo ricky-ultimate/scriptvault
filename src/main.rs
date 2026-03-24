@@ -58,7 +58,8 @@ fn run() -> Result<()> {
         Command::Recommend => vault::recommend_scripts()?,
         Command::Export(args) => vault::export_scripts(args)?,
         Command::Sync(sync_cmd) => match sync_cmd.action {
-            None | Some(SyncAction::Push) => sync::push_all()?,
+            None => sync::pull_all()?,
+            Some(SyncAction::Push) => sync::push_all()?,
             Some(SyncAction::Pull) => sync::pull_all()?,
             Some(SyncAction::Status) => sync::show_status()?,
             Some(SyncAction::Resolve(args)) => {

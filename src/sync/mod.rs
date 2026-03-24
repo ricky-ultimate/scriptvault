@@ -35,7 +35,7 @@ pub fn sync_vault() -> Result<()> {
 
 pub fn push_all() -> Result<()> {
     let manager = build_manager()?;
-    let report = manager.push_pending()?;
+    let report = manager.full_sync()?;
     print_report(&report);
     Ok(())
 }
