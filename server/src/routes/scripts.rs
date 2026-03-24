@@ -25,6 +25,8 @@ pub async fn list_scripts(
                 "version": m.version,
                 "hash": m.hash,
                 "updated_at": m.updated_at,
+                "tags": m.tags,
+                "description": m.description,
             })
         })
         .collect();
@@ -72,7 +74,7 @@ pub async fn put_script(
     headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> Result<impl IntoResponse, AppError> {
-    let if_match = headers
+    let if_match_raw = headers
         .get("If-Match")
         .and_then(|v| v.to_str().ok())
         .map(|v| v.trim_matches('"').to_string());
@@ -98,6 +100,19 @@ pub async fn put_script(
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse::<chrono::DateTime<chrono::Utc>>().ok())
         .unwrap_or_else(chrono::Utc::now);
+    let tags: Vec<String> = payload
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|t| t.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let description = payload
+        .get("description")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     if name.is_empty() {
         return Err(AppError::BadRequest("missing name field".into()));
@@ -109,17 +124,17 @@ pub async fn put_script(
         return Err(AppError::BadRequest("missing metadata.hash field".into()));
     }
 
-    let etag = match state
-        .r2
-        .put_script(&user.user_id, &script_id, &payload, if_match.as_deref())
+    let already_exists = db::script_meta_exists(&state.db, &user.user_id, &script_id)
         .await
-    {
-        Ok(e) => e,
-        Err(e) if e.to_string() == "etag_mismatch" => return Err(AppError::PreconditionFailed),
-        Err(e) => return Err(AppError::Internal(e)),
+        .map_err(AppError::Internal)?;
+
+    let effective_if_match = if if_match_raw.is_some() && !already_exists {
+        None
+    } else {
+        if_match_raw.as_deref()
     };
 
-    if let Err(e) = db::upsert_script_meta(
+    db::upsert_script_meta(
         &state.db,
         &user.user_id,
         &script_id,
@@ -127,19 +142,46 @@ pub async fn put_script(
         &version,
         &hash,
         updated_at,
+        &tags,
+        description.as_deref(),
     )
     .await
+    .map_err(AppError::Internal)?;
+
+    let etag = match state
+        .r2
+        .put_script(&user.user_id, &script_id, &payload, effective_if_match)
+        .await
     {
-        if let Err(r2_err) = state.r2.delete_script(&user.user_id, &script_id).await {
-            tracing::error!(
-                script_id = %script_id,
-                user_id = %user.user_id,
-                r2_err = %r2_err,
-                "R2 write succeeded but Postgres failed and R2 rollback also failed"
-            );
+        Ok(e) => e,
+        Err(e) if e.to_string() == "etag_mismatch" => {
+            if let Err(rollback_err) =
+                db::delete_script_meta(&state.db, &user.user_id, &script_id).await
+            {
+                tracing::error!(
+                    script_id = %script_id,
+                    user_id = %user.user_id,
+                    rollback_err = %rollback_err,
+                    "etag mismatch on R2 write; Postgres rollback also failed — manual cleanup required"
+                );
+            }
+            return Err(AppError::PreconditionFailed);
         }
-        return Err(AppError::Internal(e));
-    }
+        Err(e) => {
+            if let Err(rollback_err) =
+                db::delete_script_meta(&state.db, &user.user_id, &script_id).await
+            {
+                tracing::error!(
+                    script_id = %script_id,
+                    user_id = %user.user_id,
+                    r2_err = %e,
+                    rollback_err = %rollback_err,
+                    "R2 write failed; Postgres rollback also failed — manual cleanup required"
+                );
+            }
+            return Err(AppError::Internal(e));
+        }
+    };
 
     let mut resp_headers = HeaderMap::new();
     resp_headers.insert(

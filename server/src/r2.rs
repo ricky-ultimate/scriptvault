@@ -7,7 +7,6 @@ use aws_sdk_s3::{
     primitives::ByteStream,
 };
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 pub struct R2Client {
     client: Client,
@@ -44,10 +43,12 @@ impl R2Client {
         format!("users/{}/index.json", user_id)
     }
 
-    fn compute_etag(bytes: &[u8]) -> String {
-        let mut h = Sha256::new();
-        h.update(bytes);
-        hex::encode(h.finalize())
+    fn content_etag(script: &Value) -> Option<String> {
+        script
+            .get("metadata")
+            .and_then(|m| m.get("hash"))
+            .and_then(|h| h.as_str())
+            .map(|h| h.to_string())
     }
 
     pub async fn list_script_metas(&self, user_id: &str) -> Result<Vec<Value>> {
@@ -83,8 +84,9 @@ impl R2Client {
         {
             Ok(out) => {
                 let bytes = out.body.collect().await?.into_bytes();
-                let etag = Self::compute_etag(&bytes);
-                let value = serde_json::from_slice(&bytes)?;
+                let value: Value = serde_json::from_slice(&bytes)?;
+                let etag = Self::content_etag(&value)
+                    .ok_or_else(|| anyhow!("script missing metadata.hash"))?;
                 Ok((value, etag))
             }
             Err(e) if matches!(e.as_service_error(), Some(GetObjectError::NoSuchKey(_))) => {
@@ -114,7 +116,10 @@ impl R2Client {
             {
                 Ok(out) => {
                     let bytes = out.body.collect().await?.into_bytes();
-                    let current_etag = Self::compute_etag(&bytes);
+                    let existing: Value = serde_json::from_slice(&bytes)
+                        .map_err(|e| anyhow!("failed to parse existing script: {}", e))?;
+                    let current_etag = Self::content_etag(&existing)
+                        .ok_or_else(|| anyhow!("existing script missing metadata.hash"))?;
                     if current_etag != expected_etag {
                         return Err(anyhow!("etag_mismatch"));
                     }
@@ -126,8 +131,10 @@ impl R2Client {
             }
         }
 
+        let etag = Self::content_etag(content)
+            .ok_or_else(|| anyhow!("script payload missing metadata.hash"))?;
+
         let bytes = serde_json::to_vec(content)?;
-        let etag = Self::compute_etag(&bytes);
 
         self.client
             .put_object()
@@ -194,5 +201,7 @@ fn build_meta(script_id: &str, script: &Value) -> Option<Value> {
         "version": script.get("version")?.as_str()?,
         "updated_at": script.get("updated_at")?.as_str()?,
         "hash": script.get("metadata")?.get("hash")?.as_str()?,
+        "tags": script.get("tags").cloned().unwrap_or(serde_json::json!([])),
+        "description": script.get("description").cloned().unwrap_or(serde_json::Value::Null),
     }))
 }
