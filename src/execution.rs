@@ -15,20 +15,17 @@ use std::process::{Command, Stdio};
 use std::time::Instant;
 
 pub fn run_script(args: RunArgs) -> Result<()> {
-    if args.sandbox {
-        return Err(anyhow!(
-            "Sandbox execution is not yet available in this version"
-        ));
-    }
-
-    if args.update {
-        return Err(anyhow!(
-            "Script updates require cloud sync which is not yet available"
-        ));
-    }
-
     let config = Config::load()?;
     let ci_mode = args.ci || std::env::var(ENV_SCRIPTVAULT_CI).is_ok();
+
+    if args.update {
+        if !config.is_authenticated() {
+            return Err(anyhow!(
+                "sv run --update requires cloud sync. Run 'sv auth login --token <API_KEY>' first."
+            ));
+        }
+        pull_script_update(&args.script, &config)?;
+    }
 
     let scripts = load_scripts_local()?;
     let mut script = scripts
@@ -82,7 +79,11 @@ pub fn run_script(args: RunArgs) -> Result<()> {
     println!();
 
     let start = Instant::now();
-    let result = execute_script(&script, &args.args, args.verbose)?;
+    let result = if args.sandbox {
+        execute_script_sandbox(&script, &args.args, args.verbose)?
+    } else {
+        execute_script(&script, &args.args, args.verbose)?
+    };
     let duration = start.elapsed();
 
     let exit_code = result.exit_code;
@@ -126,10 +127,7 @@ pub fn run_script(args: RunArgs) -> Result<()> {
 
     println!();
     if exit_code == 0 {
-        println!(
-            "Completed in {:.2}s",
-            duration.as_secs_f64()
-        );
+        println!("Completed in {:.2}s", duration.as_secs_f64());
     } else {
         println!(
             "Failed with exit code {} in {:.2}s",
@@ -137,6 +135,63 @@ pub fn run_script(args: RunArgs) -> Result<()> {
             duration.as_secs_f64()
         );
     }
+
+    Ok(())
+}
+
+fn pull_script_update(script_name: &str, config: &Config) -> Result<()> {
+    use crate::sync::remote::{HttpRemoteBackend, RemoteBackend};
+    use crate::storage::StorageBackend;
+
+    let token = config
+        .auth_token
+        .clone()
+        .ok_or_else(|| anyhow!("No auth token found"))?;
+
+    let remote = HttpRemoteBackend::new(config.api_endpoint.clone(), token);
+    let local = config.get_storage_backend()?;
+
+    let remote_metas = remote.list_scripts()?;
+    let meta = remote_metas
+        .iter()
+        .find(|m| m.name == script_name)
+        .ok_or_else(|| anyhow!("Script '{}' not found on remote", script_name))?;
+
+    let local_script = local.load_script_by_name(script_name);
+    let needs_update = match &local_script {
+        Ok(s) => s.metadata.hash != meta.hash,
+        Err(_) => true,
+    };
+
+    if !needs_update {
+        return Ok(());
+    }
+
+    println!("Pulling latest version of '{}'...", script_name.yellow());
+
+    let mut remote_script = remote.fetch_script(&meta.id)?;
+    let now = chrono::Utc::now();
+    let hash = remote_script.metadata.hash.clone();
+    let version = remote_script.version.clone();
+
+    remote_script.sync_state = crate::script::SyncState {
+        status: crate::script::SyncStatus::Synced,
+        last_synced_at: Some(now),
+        remote_version: Some(version),
+        conflict_base_hash: Some(hash),
+    };
+
+    if local.script_exists(&remote_script.id)? {
+        local.update_script(&remote_script)?;
+    } else {
+        local.save_script(&remote_script)?;
+    }
+
+    println!(
+        "Updated '{}' to {}",
+        script_name.yellow(),
+        remote_script.version.green()
+    );
 
     Ok(())
 }
@@ -188,7 +243,7 @@ struct ExecutionResult {
     error: Option<String>,
 }
 
-fn execute_script(script: &Script, args: &[String], verbose: bool) -> Result<ExecutionResult> {
+fn write_temp_script(script: &Script) -> Result<std::path::PathBuf> {
     let temp_dir = std::env::temp_dir().join("scriptvault");
     fs::create_dir_all(&temp_dir)?;
 
@@ -205,8 +260,17 @@ fn execute_script(script: &Script, args: &[String], verbose: bool) -> Result<Exe
         fs::set_permissions(&script_path, perms)?;
     }
 
-    let (interpreter, interpreter_args) = get_interpreter_command(&script.language);
+    Ok(script_path)
+}
 
+fn spawn_and_collect(
+    interpreter: &str,
+    interpreter_args: &[&str],
+    script_path: &std::path::Path,
+    args: &[String],
+    env: Option<&HashMap<String, String>>,
+    verbose: bool,
+) -> Result<ExecutionResult> {
     if verbose {
         println!("  Interpreter: {}", interpreter);
         println!("  Script path: {}", script_path.display());
@@ -214,20 +278,23 @@ fn execute_script(script: &Script, args: &[String], verbose: bool) -> Result<Exe
             println!("  Arguments:   {}", args.join(" "));
         }
         println!();
-        println!("  {}:", "Content".dimmed());
-        for line in script.content.lines() {
-            println!("    {}", line.dimmed());
-        }
-        println!();
     }
 
-    let mut child = Command::new(interpreter)
-        .args(&interpreter_args)
-        .arg(&script_path)
+    let mut cmd = Command::new(interpreter);
+    cmd.args(interpreter_args)
+        .arg(script_path)
         .args(args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
+        .stderr(Stdio::piped());
+
+    if let Some(vars) = env {
+        cmd.env_clear();
+        for (k, v) in vars {
+            cmd.env(k, v);
+        }
+    }
+
+    let mut child = cmd.spawn()?;
 
     let stdout_pipe = child.stdout.take().expect("stdout was piped");
     let stderr_pipe = child.stderr.take().expect("stderr was piped");
@@ -257,27 +324,97 @@ fn execute_script(script: &Script, args: &[String], verbose: bool) -> Result<Exe
     });
 
     let status = child.wait()?;
-
-    if let Err(e) = fs::remove_file(&script_path) {
-        eprintln!("Warning: failed to remove temporary file: {}", e);
-    }
-
     let stdout_str = stdout_handle.join().unwrap_or_default();
     let stderr_str = stderr_handle.join().unwrap_or_default();
 
     Ok(ExecutionResult {
         exit_code: status.code().unwrap_or(1),
-        output: if stdout_str.is_empty() {
-            None
-        } else {
-            Some(stdout_str)
-        },
-        error: if stderr_str.is_empty() {
-            None
-        } else {
-            Some(stderr_str)
-        },
+        output: if stdout_str.is_empty() { None } else { Some(stdout_str) },
+        error: if stderr_str.is_empty() { None } else { Some(stderr_str) },
     })
+}
+
+fn execute_script(script: &Script, args: &[String], verbose: bool) -> Result<ExecutionResult> {
+    let script_path = write_temp_script(script)?;
+    let (interpreter, interpreter_args) = get_interpreter_command(&script.language);
+
+    if verbose {
+        println!();
+        println!("  {}:", "Content".dimmed());
+        for line in script.content.lines() {
+            println!("    {}", line.dimmed());
+        }
+        println!();
+    }
+
+    let result = spawn_and_collect(interpreter, &interpreter_args, &script_path, args, None, verbose);
+
+    if let Err(e) = fs::remove_file(&script_path) {
+        eprintln!("Warning: failed to remove temporary file: {}", e);
+    }
+
+    result
+}
+
+fn execute_script_sandbox(script: &Script, args: &[String], verbose: bool) -> Result<ExecutionResult> {
+    let sandbox_dir = std::env::temp_dir()
+        .join("scriptvault")
+        .join("sandbox")
+        .join(uuid::Uuid::new_v4().to_string());
+
+    fs::create_dir_all(&sandbox_dir)?;
+
+    let script_filename = format!("script.{}", script.language.extension());
+    let script_path = sandbox_dir.join(&script_filename);
+
+    fs::write(&script_path, &script.content)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&script_path)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&script_path, perms)?;
+    }
+
+    let mut env: HashMap<String, String> = HashMap::new();
+    env.insert("HOME".into(), sandbox_dir.to_string_lossy().into_owned());
+    env.insert("TMPDIR".into(), sandbox_dir.to_string_lossy().into_owned());
+    env.insert("PATH".into(), std::env::var("PATH").unwrap_or_default());
+    env.insert("SANDBOX".into(), "1".into());
+
+    if let Ok(term) = std::env::var("TERM") {
+        env.insert("TERM".into(), term);
+    }
+    if let Ok(lang) = std::env::var("LANG") {
+        env.insert("LANG".into(), lang);
+    }
+
+    if verbose {
+        println!("  Sandbox directory: {}", sandbox_dir.display());
+        println!();
+        println!("  {}:", "Content".dimmed());
+        for line in script.content.lines() {
+            println!("    {}", line.dimmed());
+        }
+        println!();
+    }
+
+    let (interpreter, interpreter_args) = get_interpreter_command(&script.language);
+    let result = spawn_and_collect(
+        interpreter,
+        &interpreter_args,
+        &script_path,
+        args,
+        Some(&env),
+        verbose,
+    );
+
+    if let Err(e) = fs::remove_dir_all(&sandbox_dir) {
+        eprintln!("Warning: failed to remove sandbox directory: {}", e);
+    }
+
+    result
 }
 
 fn get_interpreter_command(language: &ScriptLanguage) -> (&'static str, Vec<&'static str>) {
