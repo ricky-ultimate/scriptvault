@@ -1,8 +1,8 @@
 use axum::{
+    Json,
     extract::{Path, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
-    Json,
 };
 use serde_json::Value;
 
@@ -23,7 +23,10 @@ pub async fn get_script(
 ) -> Result<impl IntoResponse, AppError> {
     let (script, etag) = state.r2.get_script(&user.user_id, &script_id).await?;
     let mut headers = HeaderMap::new();
-    headers.insert("ETag", HeaderValue::from_str(&format!("\"{}\"", etag)).unwrap());
+    headers.insert(
+        "ETag",
+        HeaderValue::from_str(&format!("\"{}\"", etag)).unwrap(),
+    );
     Ok((StatusCode::OK, headers, Json(script)))
 }
 
@@ -39,13 +42,17 @@ pub async fn put_script(
         .and_then(|v| v.to_str().ok())
         .map(|v| v.trim_matches('"').to_string());
 
-    let etag = state
-        .r2
-        .put_script(&user.user_id, &script_id, &payload, if_match.as_deref())
-        .await?;
+    let etag = match result {
+        Ok(e) => e,
+        Err(e) if e.to_string() == "etag_mismatch" => return Err(AppError::PreconditionFailed),
+        Err(e) => return Err(AppError::Internal(e)),
+    };
 
     let mut resp_headers = HeaderMap::new();
-    resp_headers.insert("ETag", HeaderValue::from_str(&format!("\"{}\"", etag)).unwrap());
+    resp_headers.insert(
+        "ETag",
+        HeaderValue::from_str(&format!("\"{}\"", etag)).unwrap(),
+    );
     Ok((StatusCode::OK, resp_headers))
 }
 
