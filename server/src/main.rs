@@ -20,19 +20,24 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
             std::env::var("RUST_LOG")
-                .unwrap_or_else(|_| "scriptvault_server=info,tower_http=info".into()),
+                .unwrap_or_else(|_| "scriptvault_server=debug,tower_http=debug".into()),
         ))
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    tracing::info!("Starting ScriptVault server...");
+
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    tracing::debug!("Database URL configured");
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)
         .await?;
+    tracing::info!("Connected to database");
 
     db::init_tables(&pool).await?;
+    tracing::info!("Database tables initialized");
 
     let r2 = r2::R2Client::new(
         &std::env::var("R2_ACCOUNT_ID").expect("R2_ACCOUNT_ID must be set"),
@@ -40,6 +45,7 @@ async fn main() -> anyhow::Result<()> {
         &std::env::var("R2_SECRET_ACCESS_KEY").expect("R2_SECRET_ACCESS_KEY must be set"),
         &std::env::var("R2_BUCKET_NAME").expect("R2_BUCKET_NAME must be set"),
     );
+    tracing::info!("R2 client initialized");
 
     let state = AppState {
         db: pool,
@@ -58,9 +64,12 @@ async fn main() -> anyhow::Result<()> {
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "8080".into());
     let addr = format!("0.0.0.0:{}", port);
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
 
-    tracing::info!("Listening on {}", addr);
+    tracing::info!("Attempting to bind to {}", addr);
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    tracing::info!("Successfully bound to {}, starting server", addr);
+
+    tracing::info!("Server listening on http://{}", addr);
     axum::serve(listener, app).await?;
 
     Ok(())
