@@ -72,7 +72,11 @@ pub struct SaveArgs {
     #[arg(value_name = "FILE")]
     pub file: String,
 
-    #[arg(long, value_name = "NAME", help = "Override the vault name (defaults to filename stem)")]
+    #[arg(
+        long,
+        value_name = "NAME",
+        help = "Override the vault name (defaults to filename stem)"
+    )]
     pub name: Option<String>,
 
     #[arg(long, value_name = "TAGS")]
@@ -90,7 +94,11 @@ pub struct UpdateArgs {
     #[arg(value_name = "FILE", help = "Path to the updated script file")]
     pub file: String,
 
-    #[arg(long, value_name = "NAME", help = "Override vault name lookup (defaults to filename stem)")]
+    #[arg(
+        long,
+        value_name = "NAME",
+        help = "Override vault name lookup (defaults to filename stem)"
+    )]
     pub name: Option<String>,
 }
 
@@ -154,19 +162,29 @@ pub struct RunArgs {
     #[arg(long, help = "Show what would happen without executing")]
     pub dry_run: bool,
 
-    #[arg(long, help = "Isolated sandbox environment (not yet available)")]
+    #[arg(
+        long,
+        help = "Isolated environment: cleared env vars, private HOME and TMPDIR. Does not provide kernel-level sandboxing."
+    )]
     pub sandbox: bool,
 
     #[arg(long, help = "Require confirmation before running")]
     pub confirm: bool,
 
-    #[arg(long, short, help = "Show interpreter, path, and arguments before execution")]
+    #[arg(
+        long,
+        short,
+        help = "Show interpreter, path, and arguments before execution"
+    )]
     pub verbose: bool,
 
     #[arg(long, help = "Non-interactive mode, no prompts")]
     pub ci: bool,
 
-    #[arg(long, help = "Pull latest version before running (requires cloud sync)")]
+    #[arg(
+        long,
+        help = "Pull latest version before running (requires cloud sync)"
+    )]
     pub update: bool,
 }
 
