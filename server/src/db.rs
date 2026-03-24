@@ -1,6 +1,5 @@
 use anyhow::Result;
 use chrono::Utc;
-use rand::Rng;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -46,9 +45,19 @@ pub async fn init_tables(pool: &PgPool) -> Result<()> {
             name        TEXT NOT NULL,
             version     TEXT NOT NULL,
             hash        TEXT NOT NULL,
+            tags        TEXT[] NOT NULL DEFAULT '{}',
+            description TEXT,
             updated_at  TIMESTAMPTZ NOT NULL,
             PRIMARY KEY (id, user_id)
         )",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "ALTER TABLE script_meta
+         ADD COLUMN IF NOT EXISTS tags        TEXT[] NOT NULL DEFAULT '{}',
+         ADD COLUMN IF NOT EXISTS description TEXT",
     )
     .execute(pool)
     .await?;
@@ -64,21 +73,27 @@ pub async fn upsert_script_meta(
     version: &str,
     hash: &str,
     updated_at: chrono::DateTime<chrono::Utc>,
+    tags: &[String],
+    description: Option<&str>,
 ) -> Result<()> {
     sqlx::query(
-        "INSERT INTO script_meta (id, user_id, name, version, hash, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        "INSERT INTO script_meta (id, user_id, name, version, hash, tags, description, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (id, user_id) DO UPDATE
-         SET name = EXCLUDED.name,
-             version = EXCLUDED.version,
-             hash = EXCLUDED.hash,
-             updated_at = EXCLUDED.updated_at",
+         SET name        = EXCLUDED.name,
+             version     = EXCLUDED.version,
+             hash        = EXCLUDED.hash,
+             tags        = EXCLUDED.tags,
+             description = EXCLUDED.description,
+             updated_at  = EXCLUDED.updated_at",
     )
     .bind(id)
     .bind(user_id)
     .bind(name)
     .bind(version)
     .bind(hash)
+    .bind(tags)
+    .bind(description)
     .bind(updated_at)
     .execute(pool)
     .await?;
@@ -106,7 +121,10 @@ pub async fn script_meta_exists(pool: &PgPool, user_id: &str, id: &str) -> Resul
 pub async fn list_script_meta(pool: &PgPool, user_id: &str) -> Result<Vec<ScriptMeta>> {
     use sqlx::Row;
     let rows = sqlx::query(
-        "SELECT id, name, version, hash, updated_at FROM script_meta WHERE user_id = $1 ORDER BY updated_at DESC",
+        "SELECT id, name, version, hash, tags, description, updated_at
+         FROM script_meta
+         WHERE user_id = $1
+         ORDER BY updated_at DESC",
     )
     .bind(user_id)
     .fetch_all(pool)
@@ -119,6 +137,8 @@ pub async fn list_script_meta(pool: &PgPool, user_id: &str) -> Result<Vec<Script
             name: r.get("name"),
             version: r.get("version"),
             hash: r.get("hash"),
+            tags: r.get("tags"),
+            description: r.get("description"),
             updated_at: r.get("updated_at"),
         })
         .collect())
@@ -129,6 +149,8 @@ pub struct ScriptMeta {
     pub name: String,
     pub version: String,
     pub hash: String,
+    pub tags: Vec<String>,
+    pub description: Option<String>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
