@@ -39,9 +39,89 @@ pub async fn init_tables(pool: &PgPool) -> Result<()> {
     .execute(pool)
     .await?;
 
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS script_meta (
+            id          TEXT NOT NULL,
+            user_id     TEXT NOT NULL REFERENCES users(id),
+            name        TEXT NOT NULL,
+            version     TEXT NOT NULL,
+            hash        TEXT NOT NULL,
+            updated_at  TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (id, user_id)
+        )",
+    )
+    .execute(pool)
+    .await?;
+
     Ok(())
 }
 
+pub async fn upsert_script_meta(
+    pool: &PgPool,
+    user_id: &str,
+    id: &str,
+    name: &str,
+    version: &str,
+    hash: &str,
+    updated_at: chrono::DateTime<chrono::Utc>,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO script_meta (id, user_id, name, version, hash, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (id, user_id) DO UPDATE
+         SET name = EXCLUDED.name,
+             version = EXCLUDED.version,
+             hash = EXCLUDED.hash,
+             updated_at = EXCLUDED.updated_at",
+    )
+    .bind(id)
+    .bind(user_id)
+    .bind(name)
+    .bind(version)
+    .bind(hash)
+    .bind(updated_at)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn delete_script_meta(pool: &PgPool, user_id: &str, id: &str) -> Result<()> {
+    sqlx::query("DELETE FROM script_meta WHERE id = $1 AND user_id = $2")
+        .bind(id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn list_script_meta(pool: &PgPool, user_id: &str) -> Result<Vec<ScriptMeta>> {
+    use sqlx::Row;
+    let rows = sqlx::query(
+        "SELECT id, name, version, hash, updated_at FROM script_meta WHERE user_id = $1 ORDER BY updated_at DESC",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .iter()
+        .map(|r| ScriptMeta {
+            id: r.get("id"),
+            name: r.get("name"),
+            version: r.get("version"),
+            hash: r.get("hash"),
+            updated_at: r.get("updated_at"),
+        })
+        .collect())
+}
+
+pub struct ScriptMeta {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub hash: String,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
 pub fn hash_key(key: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(key.as_bytes());
@@ -74,7 +154,13 @@ pub async fn find_user_by_key_hash(
         let user_id: String = r.get("user_id");
         let username: String = r.get("username");
         let key_id: String = r.get("key_id");
-        (User { id: user_id, username }, key_id)
+        (
+            User {
+                id: user_id,
+                username,
+            },
+            key_id,
+        )
     }))
 }
 
@@ -121,10 +207,7 @@ pub async fn create_user(pool: &PgPool, username: &str) -> Result<(User, Created
             id: user_id,
             username: username.to_string(),
         },
-        CreatedApiKey {
-            key_id,
-            plaintext,
-        },
+        CreatedApiKey { key_id, plaintext },
     ))
 }
 
