@@ -9,6 +9,7 @@ mod storage;
 mod sync;
 mod utils;
 mod vault;
+mod versions;
 
 use anyhow::{Result, anyhow};
 use clap::Parser;
