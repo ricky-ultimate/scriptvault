@@ -94,6 +94,15 @@ pub async fn delete_script_meta(pool: &PgPool, user_id: &str, id: &str) -> Resul
     Ok(())
 }
 
+pub async fn script_meta_exists(pool: &PgPool, user_id: &str, id: &str) -> Result<bool> {
+    let row = sqlx::query("SELECT 1 AS one FROM script_meta WHERE id = $1 AND user_id = $2")
+        .bind(id)
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row.is_some())
+}
+
 pub async fn list_script_meta(pool: &PgPool, user_id: &str) -> Result<Vec<ScriptMeta>> {
     use sqlx::Row;
     let rows = sqlx::query(
@@ -122,6 +131,7 @@ pub struct ScriptMeta {
     pub hash: String,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
+
 pub fn hash_key(key: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(key.as_bytes());
