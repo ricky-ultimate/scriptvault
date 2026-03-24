@@ -10,6 +10,10 @@ pub struct RemoteScriptMeta {
     pub version: String,
     pub updated_at: DateTime<Utc>,
     pub hash: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -87,6 +91,8 @@ impl RemoteBackend for HttpRemoteBackend {
             version: script.version.clone(),
             updated_at: script.updated_at,
             hash: script.metadata.hash.clone(),
+            tags: script.tags.clone(),
+            description: script.description.clone(),
         })
     }
 
