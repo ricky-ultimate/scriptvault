@@ -6,7 +6,7 @@ pub use remote::RemoteBackend;
 
 use crate::config::Config;
 use crate::sync::remote::HttpRemoteBackend;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use colored::*;
 
 fn build_manager() -> Result<SyncManager> {

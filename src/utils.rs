@@ -45,11 +45,7 @@ pub fn run_doctor() -> Result<()> {
         if which::which(editor_bin).is_ok() {
             println!("{} ({})", "✓".green(), editor_bin);
         } else {
-            println!(
-                "{} ({} not found in PATH)",
-                "not found".red(),
-                editor_bin
-            );
+            println!("{} ({} not found in PATH)", "not found".red(), editor_bin);
         }
     }
 

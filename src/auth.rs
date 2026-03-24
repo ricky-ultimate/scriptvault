@@ -1,7 +1,7 @@
 use crate::cli::{LoginArgs, RegisterArgs};
 use crate::config::{AuthMode, Config};
 use crate::constants::default_author;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use colored::*;
 use dialoguer::Input;
 use serde::Deserialize;

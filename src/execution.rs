@@ -4,7 +4,7 @@ use crate::constants::*;
 use crate::context;
 use crate::script::{ExecutionRecord, Script, ScriptLanguage};
 use crate::vault::{load_scripts_local, update_script_metadata};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use colored::*;
 use dialoguer::Confirm;
 use std::collections::HashMap;
@@ -140,8 +140,8 @@ pub fn run_script(args: RunArgs) -> Result<()> {
 }
 
 fn pull_script_update(script_name: &str, config: &Config) -> Result<()> {
-    use crate::sync::remote::{HttpRemoteBackend, RemoteBackend};
     use crate::storage::StorageBackend;
+    use crate::sync::remote::{HttpRemoteBackend, RemoteBackend};
 
     let token = config
         .auth_token
@@ -329,8 +329,16 @@ fn spawn_and_collect(
 
     Ok(ExecutionResult {
         exit_code: status.code().unwrap_or(1),
-        output: if stdout_str.is_empty() { None } else { Some(stdout_str) },
-        error: if stderr_str.is_empty() { None } else { Some(stderr_str) },
+        output: if stdout_str.is_empty() {
+            None
+        } else {
+            Some(stdout_str)
+        },
+        error: if stderr_str.is_empty() {
+            None
+        } else {
+            Some(stderr_str)
+        },
     })
 }
 
@@ -347,7 +355,14 @@ fn execute_script(script: &Script, args: &[String], verbose: bool) -> Result<Exe
         println!();
     }
 
-    let result = spawn_and_collect(interpreter, &interpreter_args, &script_path, args, None, verbose);
+    let result = spawn_and_collect(
+        interpreter,
+        &interpreter_args,
+        &script_path,
+        args,
+        None,
+        verbose,
+    );
 
     if let Err(e) = fs::remove_file(&script_path) {
         eprintln!("Warning: failed to remove temporary file: {}", e);
@@ -356,7 +371,11 @@ fn execute_script(script: &Script, args: &[String], verbose: bool) -> Result<Exe
     result
 }
 
-fn execute_script_sandbox(script: &Script, args: &[String], verbose: bool) -> Result<ExecutionResult> {
+fn execute_script_sandbox(
+    script: &Script,
+    args: &[String],
+    verbose: bool,
+) -> Result<ExecutionResult> {
     let sandbox_dir = std::env::temp_dir()
         .join("scriptvault")
         .join("sandbox")
@@ -509,7 +528,11 @@ pub fn show_history(args: HistoryArgs) -> Result<()> {
     );
     println!("{}", "─".repeat(80).dimmed());
 
-    let limit = if args.recent { 10 } else { DEFAULT_HISTORY_LIMIT };
+    let limit = if args.recent {
+        10
+    } else {
+        DEFAULT_HISTORY_LIMIT
+    };
 
     for record in filtered.iter().rev().take(limit) {
         let time = record.executed_at.format("%Y-%m-%d %H:%M:%S");
@@ -574,15 +597,21 @@ pub fn share_script(_args: crate::cli::ShareArgs) -> Result<()> {
 }
 
 pub fn list_team_members() -> Result<()> {
-    Err(anyhow!("team features are not yet available in this version"))
+    Err(anyhow!(
+        "team features are not yet available in this version"
+    ))
 }
 
 pub fn list_team_scripts() -> Result<()> {
-    Err(anyhow!("team features are not yet available in this version"))
+    Err(anyhow!(
+        "team features are not yet available in this version"
+    ))
 }
 
 pub fn show_permissions() -> Result<()> {
-    Err(anyhow!("team features are not yet available in this version"))
+    Err(anyhow!(
+        "team features are not yet available in this version"
+    ))
 }
 
 pub fn recommend_scripts() -> Result<()> {

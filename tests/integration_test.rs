@@ -3,8 +3,8 @@ use scriptvault::context::{contexts_match, normalize_git_url};
 use scriptvault::script::{
     ExecutionRecord, Script, ScriptContext, ScriptLanguage, ScriptMetadata, SyncState, Visibility,
 };
-use scriptvault::storage::local::LocalStorage;
 use scriptvault::storage::StorageBackend;
+use scriptvault::storage::local::LocalStorage;
 use std::collections::HashMap;
 use tempfile::TempDir;
 
@@ -374,13 +374,22 @@ fn test_language_from_extension_all_supported() {
     assert_eq!(ScriptLanguage::from_extension("sh"), ScriptLanguage::Shell);
     assert_eq!(ScriptLanguage::from_extension("bash"), ScriptLanguage::Bash);
     assert_eq!(ScriptLanguage::from_extension("py"), ScriptLanguage::Python);
-    assert_eq!(ScriptLanguage::from_extension("js"), ScriptLanguage::JavaScript);
+    assert_eq!(
+        ScriptLanguage::from_extension("js"),
+        ScriptLanguage::JavaScript
+    );
     assert_eq!(ScriptLanguage::from_extension("rb"), ScriptLanguage::Ruby);
     assert_eq!(ScriptLanguage::from_extension("pl"), ScriptLanguage::Perl);
-    assert_eq!(ScriptLanguage::from_extension("ps1"), ScriptLanguage::PowerShell);
+    assert_eq!(
+        ScriptLanguage::from_extension("ps1"),
+        ScriptLanguage::PowerShell
+    );
     assert_eq!(ScriptLanguage::from_extension("bat"), ScriptLanguage::Batch);
     assert_eq!(ScriptLanguage::from_extension("cmd"), ScriptLanguage::Batch);
-    assert_eq!(ScriptLanguage::from_extension("xyz"), ScriptLanguage::Unknown);
+    assert_eq!(
+        ScriptLanguage::from_extension("xyz"),
+        ScriptLanguage::Unknown
+    );
 }
 
 #[test]
@@ -514,5 +523,8 @@ fn test_script_not_found_by_name_errors() {
 fn test_script_not_found_by_id_errors() {
     let tmp = TempDir::new().unwrap();
     let s = storage(&tmp);
-    assert!(s.load_script("00000000-0000-0000-0000-000000000000").is_err());
+    assert!(
+        s.load_script("00000000-0000-0000-0000-000000000000")
+            .is_err()
+    );
 }

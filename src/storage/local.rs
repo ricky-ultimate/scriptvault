@@ -35,7 +35,10 @@ impl LocalStorage {
     pub fn new(vault_path: PathBuf) -> Result<Self> {
         fs::create_dir_all(&vault_path).context("failed to create vault directory")?;
         let index_path = vault_path.join("index.json");
-        Ok(Self { vault_path, index_path })
+        Ok(Self {
+            vault_path,
+            index_path,
+        })
     }
 
     fn script_path(&self, id: &str) -> PathBuf {
@@ -44,8 +47,8 @@ impl LocalStorage {
 
     fn read_script(&self, id: &str) -> Result<Script> {
         let path = self.script_path(id);
-        let raw = fs::read_to_string(&path)
-            .with_context(|| format!("script file not found: {}", id))?;
+        let raw =
+            fs::read_to_string(&path).with_context(|| format!("script file not found: {}", id))?;
         serde_json::from_str(&raw).context("failed to parse script file")
     }
 
@@ -162,7 +165,12 @@ impl StorageBackend for LocalStorage {
         Ok(self.read_script(script_id)?.sync_state.status)
     }
 
-    fn mark_synced(&self, script_id: &str, remote_version: &str, synced_at: DateTime<Utc>) -> Result<()> {
+    fn mark_synced(
+        &self,
+        script_id: &str,
+        remote_version: &str,
+        synced_at: DateTime<Utc>,
+    ) -> Result<()> {
         self.mutate(script_id, |s| {
             let hash = s.metadata.hash.clone();
             s.sync_state = SyncState {
@@ -181,13 +189,17 @@ impl StorageBackend for LocalStorage {
     }
 
     fn list_pending_push(&self) -> Result<Vec<Script>> {
-        Ok(self.list_scripts()?.into_iter()
+        Ok(self
+            .list_scripts()?
+            .into_iter()
             .filter(|s| s.sync_state.status == SyncStatus::PendingPush)
             .collect())
     }
 
     fn list_conflicts(&self) -> Result<Vec<Script>> {
-        Ok(self.list_scripts()?.into_iter()
+        Ok(self
+            .list_scripts()?
+            .into_iter()
             .filter(|s| s.sync_state.status == SyncStatus::Conflict)
             .collect())
     }
@@ -282,7 +294,10 @@ mod tests {
         s.save_script(&script).unwrap();
         script.content = "echo updated".to_string();
         s.update_script(&script).unwrap();
-        assert_eq!(s.load_script_by_name("update-test").unwrap().content, "echo updated");
+        assert_eq!(
+            s.load_script_by_name("update-test").unwrap().content,
+            "echo updated"
+        );
     }
 
     #[test]

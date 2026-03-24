@@ -1,7 +1,7 @@
 use crate::script::{Script, SyncState, SyncStatus};
 use crate::storage::StorageBackend;
 use crate::sync::remote::{RemoteBackend, RemoteScriptMeta};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::Utc;
 use std::collections::{HashMap, HashSet};
 
@@ -90,12 +90,10 @@ impl SyncManager {
             let status = self.compute_status(script, remote_meta);
 
             match status {
-                SyncStatus::PendingPush | SyncStatus::LocalOnly => {
-                    match self.do_push(script) {
-                        Ok(_) => report.pushed.push(script.name.clone()),
-                        Err(e) => report.errors.push((script.name.clone(), e.to_string())),
-                    }
-                }
+                SyncStatus::PendingPush | SyncStatus::LocalOnly => match self.do_push(script) {
+                    Ok(_) => report.pushed.push(script.name.clone()),
+                    Err(e) => report.errors.push((script.name.clone(), e.to_string())),
+                },
                 SyncStatus::PendingPull => {
                     if let Some(meta) = remote_meta {
                         match self.do_pull(&meta.id) {
@@ -540,10 +538,7 @@ mod tests {
         assert_eq!(report.conflicts.len(), 1);
 
         assert_eq!(
-            manager
-                .local
-                .get_sync_status(&local_script.id)
-                .unwrap(),
+            manager.local.get_sync_status(&local_script.id).unwrap(),
             SyncStatus::Conflict
         );
     }

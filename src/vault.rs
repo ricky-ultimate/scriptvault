@@ -769,7 +769,11 @@ pub fn show_versions(args: VersionArgs) -> Result<()> {
         println!(
             "{:<12} {:<22} {:<15} {:<8} {:<6}",
             entry.version.yellow(),
-            entry.saved_at.format("%Y-%m-%d %H:%M:%S").to_string().dimmed(),
+            entry
+                .saved_at
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string()
+                .dimmed(),
             entry.author,
             entry.line_count,
             format!("{}b", entry.size_bytes),
@@ -803,27 +807,27 @@ pub fn diff_versions(args: DiffArgs) -> Result<()> {
     let max = a_lines.len().max(b_lines.len());
     let mut changes = 0;
 
-for i in 0..max {
-    match (a_lines.get(i).copied(), b_lines.get(i).copied()) {
-        (Some(la), Some(lb)) if la == lb => {
-            println!("  {}", la);
+    for i in 0..max {
+        match (a_lines.get(i).copied(), b_lines.get(i).copied()) {
+            (Some(la), Some(lb)) if la == lb => {
+                println!("  {}", la);
+            }
+            (Some(la), Some(lb)) => {
+                println!("{} {}", "-".red(), la.red());
+                println!("{} {}", "+".green(), lb.green());
+                changes += 1;
+            }
+            (Some(la), None) => {
+                println!("{} {}", "-".red(), la.red());
+                changes += 1;
+            }
+            (None, Some(lb)) => {
+                println!("{} {}", "+".green(), lb.green());
+                changes += 1;
+            }
+            (None, None) => {}
         }
-        (Some(la), Some(lb)) => {
-            println!("{} {}", "-".red(), la.red());
-            println!("{} {}", "+".green(), lb.green());
-            changes += 1;
-        }
-        (Some(la), None) => {
-            println!("{} {}", "-".red(), la.red());
-            changes += 1;
-        }
-        (None, Some(lb)) => {
-            println!("{} {}", "+".green(), lb.green());
-            changes += 1;
-        }
-        (None, None) => {}
     }
-}
     println!();
     println!("{} line(s) changed", changes.to_string().yellow());
 

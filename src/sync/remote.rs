@@ -74,11 +74,12 @@ impl RemoteBackend for HttpRemoteBackend {
             req = req.set("If-Match", &format!("\"{}\"", e));
         }
 
-        req.send_json(body)
-            .map_err(|e| match e {
-                ureq::Error::Status(412, _) => anyhow!("push rejected: remote was modified since last sync"),
-                other => anyhow!("push_script failed: {}", other),
-            })?;
+        req.send_json(body).map_err(|e| match e {
+            ureq::Error::Status(412, _) => {
+                anyhow!("push rejected: remote was modified since last sync")
+            }
+            other => anyhow!("push_script failed: {}", other),
+        })?;
 
         Ok(RemoteScriptMeta {
             id: script.id.clone(),

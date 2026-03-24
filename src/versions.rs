@@ -28,7 +28,9 @@ pub struct VersionStore {
 
 impl VersionStore {
     pub fn new(vault_path: &Path) -> Self {
-        Self { base: vault_path.join("history") }
+        Self {
+            base: vault_path.join("history"),
+        }
     }
 
     fn script_dir(&self, script_id: &str) -> PathBuf {
@@ -40,7 +42,8 @@ impl VersionStore {
     }
 
     fn snapshot_path(&self, script_id: &str, version: &str) -> PathBuf {
-        self.script_dir(script_id).join(format!("{}.json", sanitize_version(version)))
+        self.script_dir(script_id)
+            .join(format!("{}.json", sanitize_version(version)))
     }
 
     fn load_manifest(&self, script_id: &str) -> Result<VersionManifest> {
@@ -97,7 +100,11 @@ impl VersionStore {
     pub fn load_version(&self, script_id: &str, version: &str) -> Result<Script> {
         let path = self.snapshot_path(script_id, version);
         if !path.exists() {
-            return Err(anyhow!("version {} not found for script {}", version, script_id));
+            return Err(anyhow!(
+                "version {} not found for script {}",
+                version,
+                script_id
+            ));
         }
         let raw = fs::read_to_string(&path).context("failed to read snapshot")?;
         serde_json::from_str(&raw).context("failed to parse snapshot")
@@ -119,13 +126,23 @@ impl VersionStore {
 }
 
 fn sanitize_version(v: &str) -> String {
-    v.chars().map(|c| if c.is_alphanumeric() || c == '.' || c == '-' { c } else { '_' }).collect()
+    v.chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '.' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::script::{Script, ScriptContext, ScriptLanguage, ScriptMetadata, SyncState, Visibility};
+    use crate::script::{
+        Script, ScriptContext, ScriptLanguage, ScriptMetadata, SyncState, Visibility,
+    };
     use chrono::Utc;
     use std::collections::HashMap;
     use tempfile::TempDir;
@@ -142,7 +159,12 @@ mod tests {
             author: "test".to_string(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
-            context: ScriptContext { directory: None, git_repo: None, git_branch: None, environment: HashMap::new() },
+            context: ScriptContext {
+                directory: None,
+                git_repo: None,
+                git_branch: None,
+                environment: HashMap::new(),
+            },
             metadata: ScriptMetadata {
                 hash: format!("hash-{}", version),
                 size_bytes: 10,
@@ -163,8 +185,12 @@ mod tests {
     fn test_save_and_list_versions() {
         let tmp = TempDir::new().unwrap();
         let store = VersionStore::new(tmp.path());
-        store.save_version(&make_script("deploy", "v1.0.0")).unwrap();
-        store.save_version(&make_script("deploy", "v1.0.1")).unwrap();
+        store
+            .save_version(&make_script("deploy", "v1.0.0"))
+            .unwrap();
+        store
+            .save_version(&make_script("deploy", "v1.0.1"))
+            .unwrap();
         let versions = store.list_versions("test-id").unwrap();
         assert_eq!(versions.len(), 2);
         assert_eq!(versions[0].version, "v1.0.0");
@@ -175,8 +201,12 @@ mod tests {
     fn test_load_specific_version() {
         let tmp = TempDir::new().unwrap();
         let store = VersionStore::new(tmp.path());
-        store.save_version(&make_script("deploy", "v1.0.0")).unwrap();
-        store.save_version(&make_script("deploy", "v1.0.1")).unwrap();
+        store
+            .save_version(&make_script("deploy", "v1.0.0"))
+            .unwrap();
+        store
+            .save_version(&make_script("deploy", "v1.0.1"))
+            .unwrap();
         let v = store.load_version("test-id", "v1.0.0").unwrap();
         assert_eq!(v.content, "echo v1.0.0");
     }
@@ -185,8 +215,12 @@ mod tests {
     fn test_diff_returns_both_versions() {
         let tmp = TempDir::new().unwrap();
         let store = VersionStore::new(tmp.path());
-        store.save_version(&make_script("deploy", "v1.0.0")).unwrap();
-        store.save_version(&make_script("deploy", "v1.0.1")).unwrap();
+        store
+            .save_version(&make_script("deploy", "v1.0.0"))
+            .unwrap();
+        store
+            .save_version(&make_script("deploy", "v1.0.1"))
+            .unwrap();
         let (a, b) = store.diff_versions("test-id", "v1.0.0", "v1.0.1").unwrap();
         assert_eq!(a.version, "v1.0.0");
         assert_eq!(b.version, "v1.0.1");
@@ -196,8 +230,12 @@ mod tests {
     fn test_duplicate_version_not_saved_twice() {
         let tmp = TempDir::new().unwrap();
         let store = VersionStore::new(tmp.path());
-        store.save_version(&make_script("deploy", "v1.0.0")).unwrap();
-        store.save_version(&make_script("deploy", "v1.0.0")).unwrap();
+        store
+            .save_version(&make_script("deploy", "v1.0.0"))
+            .unwrap();
+        store
+            .save_version(&make_script("deploy", "v1.0.0"))
+            .unwrap();
         assert_eq!(store.list_versions("test-id").unwrap().len(), 1);
     }
 
@@ -205,7 +243,9 @@ mod tests {
     fn test_purge_removes_history() {
         let tmp = TempDir::new().unwrap();
         let store = VersionStore::new(tmp.path());
-        store.save_version(&make_script("deploy", "v1.0.0")).unwrap();
+        store
+            .save_version(&make_script("deploy", "v1.0.0"))
+            .unwrap();
         store.purge_script("test-id").unwrap();
         assert_eq!(store.list_versions("test-id").unwrap().len(), 0);
     }
