@@ -9,11 +9,13 @@ pub mod storage;
 pub mod sync;
 pub mod utils;
 pub mod vault;
+pub mod versions;
 
 pub use config::Config;
 pub use script::{ExecutionRecord, Script, ScriptContext, ScriptLanguage, SyncState, SyncStatus, Visibility};
 pub use sync::manager::{ConflictResolution, SyncManager, SyncReport};
 pub use sync::remote::RemoteBackend;
+pub use versions::VersionStore;
 
 #[cfg(test)]
 mod tests {

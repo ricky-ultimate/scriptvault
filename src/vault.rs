@@ -134,6 +134,9 @@ pub fn save_script(args: SaveArgs) -> Result<()> {
     }
     storage.save_script(&script)?;
 
+    let store = crate::versions::VersionStore::new(&Config::vault_dir()?);
+    store.save_version(&script)?;
+
     println!();
     println!(
         "{} Saved: {} {}",
@@ -201,6 +204,9 @@ pub fn update_script_from_file(args: UpdateArgs) -> Result<()> {
     }
 
     storage.update_script(&existing)?;
+
+    let store = crate::versions::VersionStore::new(&Config::vault_dir()?);
+    store.save_version(&existing)?;
 
     println!(
         "{} Updated: {} {} -> {}",
@@ -677,6 +683,8 @@ pub fn delete_script(args: DeleteArgs) -> Result<()> {
     }
 
     storage.delete_script(&script.id)?;
+    let store = crate::versions::VersionStore::new(&Config::vault_dir()?);
+    store.purge_script(&script.id)?;
     purge_script_history(&script.id)?;
 
     println!("{} Deleted: {}", "✓".green().bold(), args.name.yellow());
@@ -730,18 +738,144 @@ pub(crate) fn load_scripts_local() -> Result<Vec<Script>> {
     storage.list_scripts()
 }
 
-pub fn show_versions(_args: VersionArgs) -> Result<()> {
-    println!("Versions command is not yet implemented.");
+pub fn show_versions(args: VersionArgs) -> Result<()> {
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
+    let script = storage
+        .load_script_by_name(&args.name)
+        .map_err(|_| anyhow!("Script not found: {}", args.name))?;
+
+    let store = crate::versions::VersionStore::new(&Config::vault_dir()?);
+    let versions = store.list_versions(&script.id)?;
+
+    if versions.is_empty() {
+        println!("No version history for: {}", args.name);
+        return Ok(());
+    }
+
+    println!("{}", args.name.cyan().bold());
+    println!();
+    println!(
+        "{:<12} {:<22} {:<15} {:<8} {:<6}",
+        "VERSION".bold(),
+        "SAVED AT".bold(),
+        "AUTHOR".bold(),
+        "LINES".bold(),
+        "SIZE".bold()
+    );
+    println!("{}", "─".repeat(66).dimmed());
+
+    for entry in versions.iter().rev() {
+        println!(
+            "{:<12} {:<22} {:<15} {:<8} {:<6}",
+            entry.version.yellow(),
+            entry.saved_at.format("%Y-%m-%d %H:%M:%S").to_string().dimmed(),
+            entry.author,
+            entry.line_count,
+            format!("{}b", entry.size_bytes),
+        );
+    }
+
     Ok(())
 }
 
-pub fn diff_versions(_args: DiffArgs) -> Result<()> {
-    println!("Diff command is not yet implemented.");
+pub fn diff_versions(args: DiffArgs) -> Result<()> {
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
+    let script = storage
+        .load_script_by_name(&args.name)
+        .map_err(|_| anyhow!("Script not found: {}", args.name))?;
+
+    let store = crate::versions::VersionStore::new(&Config::vault_dir()?);
+    let (a, b) = store.diff_versions(&script.id, &args.version1, &args.version2)?;
+
+    println!(
+        "{} {} vs {}",
+        args.name.cyan().bold(),
+        args.version1.yellow(),
+        args.version2.yellow()
+    );
+    println!();
+
+    let a_lines: Vec<&str> = a.content.lines().collect();
+    let b_lines: Vec<&str> = b.content.lines().collect();
+
+    let max = a_lines.len().max(b_lines.len());
+    let mut changes = 0;
+
+    for i in 0..max {
+        match (a_lines.get(i), b_lines.get(i)) {
+            (Some(la), Some(lb)) if la == lb => {
+                println!("  {}", la);
+            }
+            (Some(la), Some(lb)) => {
+                println!("{} {}", "-".red(), la.red());
+                println!("{} {}", "+".green(), lb.green());
+                changes += 1;
+            }
+            (Some(la), None) => {
+                println!("{} {}", "-".red(), la.red());
+                changes += 1;
+            }
+            (None, Some(lb)) => {
+                println!("{} {}", "+".green(), lb.green());
+                changes += 1;
+            }
+            (None, None) => {}
+        }
+    }
+
+    println!();
+    println!("{} line(s) changed", changes.to_string().yellow());
+
     Ok(())
 }
 
-pub fn checkout_version(_args: CheckoutArgs) -> Result<()> {
-    println!("Checkout command is not yet implemented.");
+pub fn checkout_version(args: CheckoutArgs) -> Result<()> {
+    let parts: Vec<&str> = args.script_version.splitn(2, '@').collect();
+    if parts.len() != 2 {
+        return Err(anyhow!(
+            "Invalid format. Use: sv checkout <script>@<version>"
+        ));
+    }
+    let (name, version) = (parts[0], parts[1]);
+
+    let config = Config::load()?;
+    let storage = config.get_storage_backend()?;
+    let current = storage
+        .load_script_by_name(name)
+        .map_err(|_| anyhow!("Script not found: {}", name))?;
+
+    let store = crate::versions::VersionStore::new(&Config::vault_dir()?);
+    let snapshot = store.load_version(&current.id, version)?;
+
+    let mut restored = current.clone();
+    restored.content = snapshot.content.clone();
+    restored.metadata.hash = snapshot.metadata.hash.clone();
+    restored.metadata.size_bytes = snapshot.metadata.size_bytes;
+    restored.metadata.line_count = snapshot.metadata.line_count;
+    restored.version = bump_patch_version(&current.version);
+    restored.updated_at = chrono::Utc::now();
+
+    match restored.sync_state.status {
+        SyncStatus::Synced => restored.sync_state.status = SyncStatus::PendingPush,
+        SyncStatus::PendingPull | SyncStatus::RemoteOnly => {
+            restored.sync_state.status = SyncStatus::Conflict
+        }
+        _ => {}
+    }
+
+    store.save_version(&restored)?;
+    storage.update_script(&restored)?;
+
+    println!(
+        "{} Restored: {} from {} as {}",
+        "✓".green().bold(),
+        name.yellow(),
+        version.dimmed(),
+        restored.version.green()
+    );
+
     Ok(())
 }
 
