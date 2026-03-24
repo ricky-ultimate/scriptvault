@@ -431,3 +431,23 @@ fn rotate_history(path: &Path) -> Result<()> {
 
     Ok(())
 }
+
+pub fn share_script(_args: crate::cli::ShareArgs) -> Result<()> {
+    Err(anyhow!("share is not yet available in this version"))
+}
+
+pub fn list_team_members() -> Result<()> {
+    Err(anyhow!("team features are not yet available in this version"))
+}
+
+pub fn list_team_scripts() -> Result<()> {
+    Err(anyhow!("team features are not yet available in this version"))
+}
+
+pub fn show_permissions() -> Result<()> {
+    Err(anyhow!("team features are not yet available in this version"))
+}
+
+pub fn recommend_scripts() -> Result<()> {
+    Err(anyhow!("recommend is not yet available in this version"))
+}
