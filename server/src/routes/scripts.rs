@@ -37,6 +37,14 @@ pub async fn get_script(
     State(state): State<AppState>,
     Path(script_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
+    let exists = db::script_meta_exists(&state.db, &user.user_id, &script_id)
+        .await
+        .map_err(AppError::Internal)?;
+
+    if !exists {
+        return Err(AppError::NotFound);
+    }
+
     let (script, etag) = state
         .r2
         .get_script(&user.user_id, &script_id)
@@ -69,16 +77,6 @@ pub async fn put_script(
         .and_then(|v| v.to_str().ok())
         .map(|v| v.trim_matches('"').to_string());
 
-    let etag = match state
-        .r2
-        .put_script(&user.user_id, &script_id, &payload, if_match.as_deref())
-        .await
-    {
-        Ok(e) => e,
-        Err(e) if e.to_string() == "etag_mismatch" => return Err(AppError::PreconditionFailed),
-        Err(e) => return Err(AppError::Internal(e)),
-    };
-
     let name = payload
         .get("name")
         .and_then(|v| v.as_str())
@@ -101,7 +99,27 @@ pub async fn put_script(
         .and_then(|s| s.parse::<chrono::DateTime<chrono::Utc>>().ok())
         .unwrap_or_else(chrono::Utc::now);
 
-    db::upsert_script_meta(
+    if name.is_empty() {
+        return Err(AppError::BadRequest("missing name field".into()));
+    }
+    if version.is_empty() {
+        return Err(AppError::BadRequest("missing version field".into()));
+    }
+    if hash.is_empty() {
+        return Err(AppError::BadRequest("missing metadata.hash field".into()));
+    }
+
+    let etag = match state
+        .r2
+        .put_script(&user.user_id, &script_id, &payload, if_match.as_deref())
+        .await
+    {
+        Ok(e) => e,
+        Err(e) if e.to_string() == "etag_mismatch" => return Err(AppError::PreconditionFailed),
+        Err(e) => return Err(AppError::Internal(e)),
+    };
+
+    if let Err(e) = db::upsert_script_meta(
         &state.db,
         &user.user_id,
         &script_id,
@@ -111,7 +129,17 @@ pub async fn put_script(
         updated_at,
     )
     .await
-    .map_err(AppError::Internal)?;
+    {
+        if let Err(r2_err) = state.r2.delete_script(&user.user_id, &script_id).await {
+            tracing::error!(
+                script_id = %script_id,
+                user_id = %user.user_id,
+                r2_err = %r2_err,
+                "R2 write succeeded but Postgres failed and R2 rollback also failed"
+            );
+        }
+        return Err(AppError::Internal(e));
+    }
 
     let mut resp_headers = HeaderMap::new();
     resp_headers.insert(
@@ -126,6 +154,14 @@ pub async fn delete_script(
     State(state): State<AppState>,
     Path(script_id): Path<String>,
 ) -> Result<StatusCode, AppError> {
+    let exists = db::script_meta_exists(&state.db, &user.user_id, &script_id)
+        .await
+        .map_err(AppError::Internal)?;
+
+    if !exists {
+        return Err(AppError::NotFound);
+    }
+
     state
         .r2
         .delete_script(&user.user_id, &script_id)
