@@ -15,8 +15,14 @@ pub struct R2Client {
 }
 
 impl R2Client {
-    pub fn new(account_id: &str, access_key_id: &str, secret_access_key: &str, bucket: &str) -> Self {
-        let credentials = Credentials::new(access_key_id, secret_access_key, None, None, "scriptvault");
+    pub fn new(
+        account_id: &str,
+        access_key_id: &str,
+        secret_access_key: &str,
+        bucket: &str,
+    ) -> Self {
+        let credentials =
+            Credentials::new(access_key_id, secret_access_key, None, None, "scriptvault");
         let config = Builder::new()
             .behavior_version(BehaviorVersion::latest())
             .endpoint_url(format!("https://{}.r2.cloudflarestorage.com", account_id))
@@ -24,7 +30,10 @@ impl R2Client {
             .credentials_provider(credentials)
             .force_path_style(false)
             .build();
-        Self { client: Client::from_conf(config), bucket: bucket.to_string() }
+        Self {
+            client: Client::from_conf(config),
+            bucket: bucket.to_string(),
+        }
     }
 
     fn script_key(user_id: &str, script_id: &str) -> String {
@@ -43,7 +52,14 @@ impl R2Client {
 
     pub async fn list_script_metas(&self, user_id: &str) -> Result<Vec<Value>> {
         let key = Self::meta_key(user_id);
-        match self.client.get_object().bucket(&self.bucket).key(&key).send().await {
+        match self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .send()
+            .await
+        {
             Ok(out) => {
                 let bytes = out.body.collect().await?.into_bytes();
                 Ok(serde_json::from_slice::<Vec<Value>>(&bytes).unwrap_or_default())
@@ -57,7 +73,14 @@ impl R2Client {
 
     pub async fn get_script(&self, user_id: &str, script_id: &str) -> Result<(Value, String)> {
         let key = Self::script_key(user_id, script_id);
-        match self.client.get_object().bucket(&self.bucket).key(&key).send().await {
+        match self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .send()
+            .await
+        {
             Ok(out) => {
                 let bytes = out.body.collect().await?.into_bytes();
                 let etag = Self::compute_etag(&bytes);
@@ -81,7 +104,14 @@ impl R2Client {
         let key = Self::script_key(user_id, script_id);
 
         if let Some(expected_etag) = if_match {
-            match self.client.get_object().bucket(&self.bucket).key(&key).send().await {
+            match self
+                .client
+                .get_object()
+                .bucket(&self.bucket)
+                .key(&key)
+                .send()
+                .await
+            {
                 Ok(out) => {
                     let bytes = out.body.collect().await?.into_bytes();
                     let current_etag = Self::compute_etag(&bytes);

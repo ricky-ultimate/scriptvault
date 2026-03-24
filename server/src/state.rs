@@ -1,6 +1,6 @@
+use crate::r2::R2Client;
 use sqlx::PgPool;
 use std::sync::Arc;
-use crate::r2::R2Client;
 
 #[derive(Clone)]
 pub struct AppState {
