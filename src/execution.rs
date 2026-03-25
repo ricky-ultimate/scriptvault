@@ -120,10 +120,12 @@ pub fn run_script(args: RunArgs) -> Result<()> {
     println!();
 
     let start = Instant::now();
-    let result = if args.isolated {
+    let result = if args.sandbox {
         println!(
             "{}",
-            "Note: --isolated clears environment variables and uses a private temp directory. It does not provide kernel-level sandboxing, syscall filtering, or filesystem isolation.".yellow()
+            "Note: --sandbox uses a private temp directory and clears environment variables. \
+         It does not provide kernel-level sandboxing, syscall filtering, or filesystem isolation."
+                .yellow()
         );
         execute_script_isolated(&script, &args.args, args.verbose)?
     } else {

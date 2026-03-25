@@ -158,9 +158,10 @@ pub struct RunArgs {
 
     #[arg(
         long,
-        help = "Isolated environment: clears env vars and uses a private temp directory. Does not provide kernel-level sandboxing."
+        help = "Run in a private temp directory with a minimal environment. \
+            Does not provide kernel-level sandboxing or syscall filtering."
     )]
-    pub isolated: bool,
+    pub sandbox: bool,
 
     #[arg(long)]
     pub confirm: bool,
