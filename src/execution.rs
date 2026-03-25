@@ -14,6 +14,32 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
+const SAFE_ENV_VARS: &[&str] = &[
+    "PATH",
+    "TERM",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "TZ",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+];
+
+fn build_safe_env() -> HashMap<String, String> {
+    let mut env = HashMap::new();
+    for key in SAFE_ENV_VARS {
+        if let Ok(val) = std::env::var(key) {
+            env.insert(key.to_string(), val);
+        }
+    }
+    env
+}
+
 pub fn run_script(args: RunArgs) -> Result<()> {
     let config = Config::load()?;
     let ci_mode = args.ci || std::env::var(ENV_SCRIPTVAULT_CI).is_ok();
@@ -79,10 +105,14 @@ pub fn run_script(args: RunArgs) -> Result<()> {
     println!();
 
     let start = Instant::now();
-    let result = if args.sandbox {
-        execute_script_sandbox(&script, &args.args, args.verbose)?
+    let result = if args.isolated {
+        println!(
+            "{}",
+            "Note: --isolated clears environment variables and uses a private temp directory. It does not provide kernel-level sandboxing.".yellow()
+        );
+        execute_script_isolated(&script, &args.args, args.verbose)?
     } else {
-        execute_script(&script, &args.args, args.verbose)?
+        execute_script_safe_env(&script, &args.args, args.verbose)?
     };
     let duration = start.elapsed();
 
@@ -342,9 +372,10 @@ fn spawn_and_collect(
     })
 }
 
-fn execute_script(script: &Script, args: &[String], verbose: bool) -> Result<ExecutionResult> {
+fn execute_script_safe_env(script: &Script, args: &[String], verbose: bool) -> Result<ExecutionResult> {
     let script_path = write_temp_script(script)?;
     let (interpreter, interpreter_args) = get_interpreter_command(&script.language);
+    let safe_env = build_safe_env();
 
     if verbose {
         println!();
@@ -360,7 +391,7 @@ fn execute_script(script: &Script, args: &[String], verbose: bool) -> Result<Exe
         &interpreter_args,
         &script_path,
         args,
-        None,
+        Some(&safe_env),
         verbose,
     );
 
@@ -371,14 +402,14 @@ fn execute_script(script: &Script, args: &[String], verbose: bool) -> Result<Exe
     result
 }
 
-fn execute_script_sandbox(
+fn execute_script_isolated(
     script: &Script,
     args: &[String],
     verbose: bool,
 ) -> Result<ExecutionResult> {
     let sandbox_dir = std::env::temp_dir()
         .join("scriptvault")
-        .join("sandbox")
+        .join("isolated")
         .join(uuid::Uuid::new_v4().to_string());
 
     fs::create_dir_all(&sandbox_dir)?;
@@ -400,7 +431,7 @@ fn execute_script_sandbox(
     env.insert("HOME".into(), sandbox_dir.to_string_lossy().into_owned());
     env.insert("TMPDIR".into(), sandbox_dir.to_string_lossy().into_owned());
     env.insert("PATH".into(), std::env::var("PATH").unwrap_or_default());
-    env.insert("SANDBOX".into(), "1".into());
+    env.insert("ISOLATED".into(), "1".into());
 
     if let Ok(term) = std::env::var("TERM") {
         env.insert("TERM".into(), term);
@@ -410,7 +441,7 @@ fn execute_script_sandbox(
     }
 
     if verbose {
-        println!("  Sandbox directory: {}", sandbox_dir.display());
+        println!("  Isolated directory: {}", sandbox_dir.display());
         println!();
         println!("  {}:", "Content".dimmed());
         for line in script.content.lines() {
@@ -430,7 +461,7 @@ fn execute_script_sandbox(
     );
 
     if let Err(e) = fs::remove_dir_all(&sandbox_dir) {
-        eprintln!("Warning: failed to remove sandbox directory: {}", e);
+        eprintln!("Warning: failed to remove isolated directory: {}", e);
     }
 
     result
