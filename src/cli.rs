@@ -72,11 +72,7 @@ pub struct SaveArgs {
     #[arg(value_name = "FILE")]
     pub file: String,
 
-    #[arg(
-        long,
-        value_name = "NAME",
-        help = "Override the vault name (defaults to filename stem)"
-    )]
+    #[arg(long, value_name = "NAME")]
     pub name: Option<String>,
 
     #[arg(long, value_name = "TAGS")]
@@ -91,14 +87,10 @@ pub struct SaveArgs {
 
 #[derive(Args, Debug)]
 pub struct UpdateArgs {
-    #[arg(value_name = "FILE", help = "Path to the updated script file")]
+    #[arg(value_name = "FILE")]
     pub file: String,
 
-    #[arg(
-        long,
-        value_name = "NAME",
-        help = "Override vault name lookup (defaults to filename stem)"
-    )]
+    #[arg(long, value_name = "NAME")]
     pub name: Option<String>,
 }
 
@@ -107,7 +99,7 @@ pub struct FindArgs {
     #[arg(value_name = "QUERY")]
     pub query: Option<String>,
 
-    #[arg(long, help = "Show only scripts relevant to the current directory")]
+    #[arg(long)]
     pub here: bool,
 
     #[arg(long, value_name = "TAG")]
@@ -122,7 +114,7 @@ pub struct FindArgs {
     #[arg(long, value_name = "REPO")]
     pub git_repo: Option<String>,
 
-    #[arg(long, help = "Sort by most recently run")]
+    #[arg(long)]
     pub recent: bool,
 }
 
@@ -137,13 +129,13 @@ pub struct ListArgs {
     #[arg(long)]
     pub all: bool,
 
-    #[arg(long, help = "Sort by most recently run")]
+    #[arg(long)]
     pub recent: bool,
 
-    #[arg(long, default_value = "50", help = "Maximum number of scripts to return")]
+    #[arg(long, default_value = "50")]
     pub limit: usize,
 
-    #[arg(long, default_value = "0", help = "Number of scripts to skip")]
+    #[arg(long, default_value = "0")]
     pub offset: usize,
 }
 
@@ -160,45 +152,59 @@ pub struct RunArgs {
     #[arg(
         value_name = "ARGS",
         trailing_var_arg = true,
-        allow_hyphen_values = true,
-        help = "Arguments passed through to the script"
+        allow_hyphen_values = true
     )]
     pub args: Vec<String>,
 
-    #[arg(long, help = "Show what would happen without executing")]
+    #[arg(long)]
     pub dry_run: bool,
 
     #[arg(
         long,
-        help = "Isolated environment: clears env vars, uses private HOME and TMPDIR. Does not provide kernel-level sandboxing or syscall filtering."
+        help = "Isolated environment: clears env vars and uses a private temp directory. Does not provide kernel-level sandboxing."
     )]
     pub isolated: bool,
 
-    #[arg(long, help = "Require confirmation before running")]
+    #[arg(long)]
     pub confirm: bool,
 
-    #[arg(
-        long,
-        short,
-        help = "Show interpreter, path, and arguments before execution"
-    )]
+    #[arg(long, short)]
     pub verbose: bool,
 
-    #[arg(long, help = "Non-interactive mode, no prompts")]
+    #[arg(long)]
     pub ci: bool,
+
+    #[arg(long)]
+    pub update: bool,
 
     #[arg(
         long,
-        help = "Pull latest version before running (requires cloud sync)"
+        value_name = "USER@HOST",
+        help = "Execute the script on a remote host over SSH"
     )]
-    pub update: bool,
+    pub ssh: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "PORT",
+        default_value = "22",
+        help = "SSH port (used with --ssh)"
+    )]
+    pub ssh_port: u16,
+
+    #[arg(
+        long,
+        value_name = "KEY",
+        help = "Path to SSH identity file (used with --ssh)"
+    )]
+    pub ssh_identity: Option<String>,
 }
 
 #[derive(Args, Debug)]
 pub struct DeleteArgs {
     pub name: String,
 
-    #[arg(long, help = "Skip confirmation prompt")]
+    #[arg(long)]
     pub yes: bool,
 }
 
@@ -229,13 +235,13 @@ pub struct HistoryArgs {
     #[arg(value_name = "SCRIPT")]
     pub script: Option<String>,
 
-    #[arg(long, help = "Show only failed runs")]
+    #[arg(long)]
     pub failed: bool,
 
-    #[arg(long, help = "Show only the 10 most recent runs")]
+    #[arg(long)]
     pub recent: bool,
 
-    #[arg(long, help = "Show team execution history (requires cloud sync)")]
+    #[arg(long)]
     pub team: bool,
 }
 
@@ -303,9 +309,15 @@ pub struct SyncCommand {
 #[derive(Subcommand, Debug)]
 pub enum SyncAction {
     Status,
-    Push,
-    Pull,
+    Push(SyncPushPullArgs),
+    Pull(SyncPushPullArgs),
     Resolve(ResolveArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct SyncPushPullArgs {
+    #[arg(long, help = "Show what would be pushed or pulled without making changes")]
+    pub dry_run: bool,
 }
 
 #[derive(Args, Debug)]
