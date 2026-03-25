@@ -19,7 +19,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use state::AppState;
 
-fn build_cors() -> CorsLayer {
+fn build_cors() -> Result<CorsLayer, String> {
     let raw = std::env::var("ALLOWED_ORIGINS").unwrap_or_default();
     let origins: Vec<&str> = raw
         .split(',')
@@ -28,31 +28,38 @@ fn build_cors() -> CorsLayer {
         .collect();
 
     if origins.is_empty() {
-        tracing::warn!("ALLOWED_ORIGINS not set; allowing any origin");
-        return CorsLayer::new()
+        let dev_mode = std::env::var("DEV_MODE")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+
+        if !dev_mode {
+            return Err("ALLOWED_ORIGINS must be set in production. \
+                 Set DEV_MODE=1 to allow wildcard origins locally."
+                .to_string());
+        }
+
+        tracing::warn!("DEV_MODE enabled: allowing any CORS origin");
+        return Ok(CorsLayer::new()
             .allow_origin(Any)
             .allow_methods(Any)
-            .allow_headers(Any);
+            .allow_headers(Any));
     }
 
     let parsed: Vec<axum::http::HeaderValue> =
         origins.iter().filter_map(|o| o.parse().ok()).collect();
 
     if parsed.is_empty() {
-        tracing::warn!("ALLOWED_ORIGINS contained no valid values; allowing any origin");
-        return CorsLayer::new()
-            .allow_origin(Any)
-            .allow_methods(Any)
-            .allow_headers(Any);
+        return Err("ALLOWED_ORIGINS contained no valid values. \
+             Provide a comma-separated list of allowed origins."
+            .to_string());
     }
 
     tracing::info!("CORS restricted to {} origin(s)", parsed.len());
-    CorsLayer::new()
+    Ok(CorsLayer::new()
         .allow_origin(AllowOrigin::list(parsed))
         .allow_methods(Any)
-        .allow_headers(Any)
+        .allow_headers(Any))
 }
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
@@ -106,11 +113,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/scripts/:id", put(routes::scripts::put_script))
         .route("/scripts/:id", delete(routes::scripts::delete_script));
 
+    let cors = build_cors().map_err(|e| anyhow::anyhow!(e))?;
+
     let app = Router::new()
         .route("/health", get(routes::health))
         .nest("/v1", v1)
         .layer(TraceLayer::new_for_http())
-        .layer(build_cors())
+        .layer(cors)
         .layer(axum::middleware::from_fn(middleware::request_id))
         .layer(axum::middleware::from_fn(middleware::rate_limit))
         .with_state(state);
