@@ -38,11 +38,19 @@ impl HttpRemoteBackend {
     fn auth_header(&self) -> String {
         format!("Bearer {}", self.token)
     }
+
+    fn health_url(&self) -> String {
+        if let Some(base) = self.endpoint.strip_suffix("/v1") {
+            format!("{}/health", base)
+        } else {
+            format!("{}/health", self.endpoint)
+        }
+    }
 }
 
 impl RemoteBackend for HttpRemoteBackend {
     fn test_connection(&self) -> Result<()> {
-        ureq::get(&format!("{}/health", self.endpoint))
+        ureq::get(&self.health_url())
             .call()
             .map_err(|e| anyhow!("connection failed: {}", e))?;
         Ok(())
