@@ -13,11 +13,43 @@ use axum::{
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use tokio::signal;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use state::AppState;
+
+fn build_cors() -> CorsLayer {
+    let raw = std::env::var("ALLOWED_ORIGINS").unwrap_or_default();
+    let origins: Vec<&str> = raw.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+
+    if origins.is_empty() {
+        tracing::warn!("ALLOWED_ORIGINS not set; allowing any origin");
+        return CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(Any);
+    }
+
+    let parsed: Vec<axum::http::HeaderValue> = origins
+        .iter()
+        .filter_map(|o| o.parse().ok())
+        .collect();
+
+    if parsed.is_empty() {
+        tracing::warn!("ALLOWED_ORIGINS contained no valid values; allowing any origin");
+        return CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(Any);
+    }
+
+    tracing::info!("CORS restricted to {} origin(s)", parsed.len());
+    CorsLayer::new()
+        .allow_origin(AllowOrigin::list(parsed))
+        .allow_methods(Any)
+        .allow_headers(Any)
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -64,11 +96,6 @@ async fn main() -> anyhow::Result<()> {
         r2: Arc::new(r2),
     };
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
-
     let v1 = Router::new()
         .route("/auth/register", post(routes::auth::register))
         .route("/auth/me", get(routes::auth::me))
@@ -81,7 +108,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(routes::health))
         .nest("/v1", v1)
         .layer(TraceLayer::new_for_http())
-        .layer(cors)
+        .layer(build_cors())
         .layer(axum::middleware::from_fn(middleware::request_id))
         .layer(axum::middleware::from_fn(middleware::rate_limit))
         .with_state(state);

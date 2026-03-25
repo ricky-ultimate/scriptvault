@@ -7,6 +7,7 @@ primary_region = "lax"
 [env]
   PORT = "8080"
   RUST_LOG = "info"
+  ALLOWED_ORIGINS = ""
 
 [[services]]
   http_checks = []
