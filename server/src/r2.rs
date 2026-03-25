@@ -35,6 +35,16 @@ impl R2Client {
         }
     }
 
+    pub async fn head_bucket(&self) -> Result<()> {
+        self.client
+            .head_bucket()
+            .bucket(&self.bucket)
+            .send()
+            .await
+            .map_err(|e| anyhow!("R2 bucket unreachable: {}", e))?;
+        Ok(())
+    }
+
     fn script_key(user_id: &str, script_id: &str) -> String {
         format!("users/{}/scripts/{}.json", user_id, script_id)
     }
