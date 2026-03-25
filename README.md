@@ -202,8 +202,3 @@ The server is open source and self-hostable. See `server/` in the repository.
 ./build.sh --test
 ./build.sh --release --install
 ```
-
-## License
-
-MIT
-```
