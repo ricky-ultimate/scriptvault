@@ -207,9 +207,3 @@ The server is open source and self-hostable. See `server/` in the repository.
 
 MIT
 ```
-
----
-
-**Commit message:**
-```
-docs: rewrite README to reflect current feature set including sync, SSH, adapt, and versioning
