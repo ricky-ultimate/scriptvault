@@ -1,7 +1,7 @@
 pub mod commands;
 pub mod local;
 
-use crate::script::{Script, SyncStatus};
+use crate::script::{Script, ScriptSummary, SyncStatus};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -28,6 +28,21 @@ pub struct StorageMetadata {
     pub backend_type: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct ListOptions {
+    pub limit: usize,
+    pub offset: usize,
+}
+
+impl Default for ListOptions {
+    fn default() -> Self {
+        Self {
+            limit: 50,
+            offset: 0,
+        }
+    }
+}
+
 #[allow(dead_code)]
 pub trait StorageBackend: Send + Sync {
     fn save_script(&self, script: &Script) -> Result<()>;
@@ -35,6 +50,7 @@ pub trait StorageBackend: Send + Sync {
     fn load_script(&self, id: &str) -> Result<Script>;
     fn load_script_by_name(&self, name: &str) -> Result<Script>;
     fn list_scripts(&self) -> Result<Vec<Script>>;
+    fn list_summaries(&self, opts: &ListOptions) -> Result<Vec<ScriptSummary>>;
     fn delete_script(&self, id: &str) -> Result<()>;
     fn script_exists(&self, id: &str) -> Result<bool>;
     fn get_metadata(&self) -> Result<StorageMetadata>;
@@ -75,5 +91,12 @@ mod tests {
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: StorageConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.path, PathBuf::from("/test/path"));
+    }
+
+    #[test]
+    fn test_default_list_options() {
+        let opts = ListOptions::default();
+        assert_eq!(opts.limit, 50);
+        assert_eq!(opts.offset, 0);
     }
 }

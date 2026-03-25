@@ -62,6 +62,41 @@ pub struct Script {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScriptSummary {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub language: ScriptLanguage,
+    pub tags: Vec<String>,
+    pub description: Option<String>,
+    pub author: String,
+    pub updated_at: DateTime<Utc>,
+    pub use_count: u64,
+    pub last_run: Option<DateTime<Utc>>,
+    pub sync_status: SyncStatus,
+    pub hash: String,
+}
+
+impl From<&Script> for ScriptSummary {
+    fn from(s: &Script) -> Self {
+        Self {
+            id: s.id.clone(),
+            name: s.name.clone(),
+            version: s.version.clone(),
+            language: s.language.clone(),
+            tags: s.tags.clone(),
+            description: s.description.clone(),
+            author: s.author.clone(),
+            updated_at: s.updated_at,
+            use_count: s.metadata.use_count,
+            last_run: s.metadata.last_run,
+            sync_status: s.sync_state.status.clone(),
+            hash: s.metadata.hash.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScriptContext {
     pub directory: Option<String>,
     pub git_repo: Option<String>,
@@ -229,6 +264,10 @@ impl Script {
             visibility: Visibility::Private,
             sync_state: SyncState::default(),
         }
+    }
+
+    pub fn to_summary(&self) -> ScriptSummary {
+        ScriptSummary::from(self)
     }
 
     pub fn success_rate(&self) -> f64 {

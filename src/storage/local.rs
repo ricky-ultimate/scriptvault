@@ -1,5 +1,5 @@
-use super::{StorageBackend, StorageMetadata};
-use crate::script::{Script, SyncState, SyncStatus};
+use super::{ListOptions, StorageBackend, StorageMetadata};
+use crate::script::{Script, ScriptSummary, SyncState, SyncStatus};
 use anyhow::{Context, Result, anyhow};
 use chrono::{DateTime, Utc};
 use std::fs;
@@ -125,12 +125,29 @@ impl StorageBackend for LocalStorage {
         let idx = Index::load(&self.index_path)?;
         let mut scripts = Vec::with_capacity(idx.entries.len());
         for id in idx.entries.values() {
-            match self.read_script(id) {
-                Ok(s) => scripts.push(s),
-                Err(_) => {}
+            if let Ok(s) = self.read_script(id) {
+                scripts.push(s);
             }
         }
         Ok(scripts)
+    }
+
+    fn list_summaries(&self, opts: &ListOptions) -> Result<Vec<ScriptSummary>> {
+        let idx = Index::load(&self.index_path)?;
+        let mut summaries: Vec<ScriptSummary> = idx
+            .entries
+            .values()
+            .filter_map(|id| self.read_script(id).ok())
+            .map(|s| ScriptSummary::from(&s))
+            .collect();
+
+        summaries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+
+        Ok(summaries
+            .into_iter()
+            .skip(opts.offset)
+            .take(opts.limit)
+            .collect())
     }
 
     fn delete_script(&self, id: &str) -> Result<()> {
@@ -339,6 +356,24 @@ mod tests {
         s.save_script(&make_script("b")).unwrap();
         s.save_script(&make_script("c")).unwrap();
         assert_eq!(s.list_scripts().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_list_summaries_pagination() {
+        let tmp = TempDir::new().unwrap();
+        let s = storage(&tmp);
+        for i in 0..10 {
+            s.save_script(&make_script(&format!("script-{}", i))).unwrap();
+        }
+        let page1 = s.list_summaries(&ListOptions { limit: 4, offset: 0 }).unwrap();
+        let page2 = s.list_summaries(&ListOptions { limit: 4, offset: 4 }).unwrap();
+        let page3 = s.list_summaries(&ListOptions { limit: 4, offset: 8 }).unwrap();
+        assert_eq!(page1.len(), 4);
+        assert_eq!(page2.len(), 4);
+        assert_eq!(page3.len(), 2);
+        let all_ids: Vec<_> = [&page1[..], &page2[..], &page3[..]].concat();
+        let unique: std::collections::HashSet<_> = all_ids.iter().map(|s| &s.id).collect();
+        assert_eq!(unique.len(), 10);
     }
 
     #[test]
