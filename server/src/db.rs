@@ -101,6 +101,40 @@ pub async fn list_script_meta(pool: &PgPool, user_id: &str) -> Result<Vec<Script
         .collect())
 }
 
+pub async fn list_script_meta_paged(
+    pool: &PgPool,
+    user_id: &str,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<ScriptMeta>> {
+    use sqlx::Row;
+    let rows = sqlx::query(
+        "SELECT id, name, version, hash, tags, description, updated_at
+         FROM script_meta
+         WHERE user_id = $1
+         ORDER BY updated_at DESC
+         LIMIT $2 OFFSET $3",
+    )
+    .bind(user_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .iter()
+        .map(|r| ScriptMeta {
+            id: r.get("id"),
+            name: r.get("name"),
+            version: r.get("version"),
+            hash: r.get("hash"),
+            tags: r.get("tags"),
+            description: r.get("description"),
+            updated_at: r.get("updated_at"),
+        })
+        .collect())
+}
+
 pub struct ScriptMeta {
     pub id: String,
     pub name: String,
