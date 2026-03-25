@@ -17,8 +17,15 @@ use cli::{AuthAction, Cli, Command, SyncAction, TeamAction};
 use colored::*;
 
 fn main() {
+    let rust_log = std::env::var("RUST_LOG").unwrap_or_else(|_| "warn".into());
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::new(rust_log))
+        .with_writer(std::io::stderr)
+        .init();
+
     if let Err(e) = run() {
         eprintln!("{} {}", "Error:".red().bold(), e);
+        tracing::debug!("error detail: {:?}", e);
         std::process::exit(1);
     }
 }
