@@ -53,7 +53,11 @@ async fn main() -> anyhow::Result<()> {
         &std::env::var("R2_SECRET_ACCESS_KEY").expect("R2_SECRET_ACCESS_KEY must be set"),
         &std::env::var("R2_BUCKET_NAME").expect("R2_BUCKET_NAME must be set"),
     );
-    tracing::info!("R2 client initialized");
+
+    r2.head_bucket()
+        .await
+        .map_err(|e| anyhow::anyhow!("R2 startup check failed: {}", e))?;
+    tracing::info!("R2 bucket reachable");
 
     let state = AppState {
         db: pool,
@@ -65,17 +69,21 @@ async fn main() -> anyhow::Result<()> {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let app = Router::new()
-        .route("/health", get(routes::health))
+    let v1 = Router::new()
         .route("/auth/register", post(routes::auth::register))
         .route("/auth/me", get(routes::auth::me))
         .route("/scripts", get(routes::scripts::list_scripts))
         .route("/scripts/:id", get(routes::scripts::get_script))
         .route("/scripts/:id", put(routes::scripts::put_script))
-        .route("/scripts/:id", delete(routes::scripts::delete_script))
+        .route("/scripts/:id", delete(routes::scripts::delete_script));
+
+    let app = Router::new()
+        .route("/health", get(routes::health))
+        .nest("/v1", v1)
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .layer(axum::middleware::from_fn(middleware::request_id))
+        .layer(axum::middleware::from_fn(middleware::rate_limit))
         .with_state(state);
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "8080".into());
