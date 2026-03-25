@@ -10,13 +10,13 @@ use sha2::{Digest, Sha256};
 use std::fs;
 
 #[derive(Debug)]
-struct Substitution {
+pub struct Substitution {
     from: String,
     to: String,
-    kind: &'static str,
+    pub(crate) kind: &'static str,
 }
 
-fn build_substitutions(script_dir: Option<&str>, current_dir: Option<&str>) -> Vec<Substitution> {
+pub(crate) fn build_substitutions(script_dir: Option<&str>, current_dir: Option<&str>) -> Vec<Substitution> {
     let mut subs: Vec<Substitution> = Vec::new();
 
     match (script_dir, current_dir) {
@@ -53,7 +53,7 @@ fn extract_home(path: &str) -> Option<String> {
     None
 }
 
-fn apply_substitutions(content: &str, subs: &[Substitution]) -> String {
+pub(crate) fn apply_substitutions(content: &str, subs: &[Substitution]) -> String {
     let mut result = content.to_string();
     for sub in subs {
         result = result.replace(&sub.from, &sub.to);
