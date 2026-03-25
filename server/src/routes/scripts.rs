@@ -1,9 +1,10 @@
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
 };
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{auth::AuthenticatedUser, db, error::AppError, state::AppState};
@@ -14,6 +15,14 @@ const MAX_TAG_COUNT: usize = 20;
 const MAX_TAG_LEN: usize = 50;
 const MAX_DESCRIPTION_LEN: usize = 500;
 const MAX_CONTENT_BYTES: usize = 1_048_576;
+const MAX_PAGE_LIMIT: i64 = 100;
+const DEFAULT_PAGE_LIMIT: i64 = 50;
+
+#[derive(Deserialize)]
+pub struct ListQuery {
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
+}
 
 fn validate_script_name(name: &str) -> Result<(), AppError> {
     if name.is_empty() {
@@ -88,8 +97,19 @@ fn validate_payload_size(payload: &Value) -> Result<(), AppError> {
 pub async fn list_scripts(
     user: AuthenticatedUser,
     State(state): State<AppState>,
+    Query(params): Query<ListQuery>,
 ) -> Result<Json<Vec<Value>>, AppError> {
-    let metas = db::list_script_meta(&state.db, &user.user_id)
+    let limit = params
+        .limit
+        .unwrap_or(DEFAULT_PAGE_LIMIT)
+        .clamp(1, MAX_PAGE_LIMIT);
+    let offset = params.offset.unwrap_or(0).max(0);
+
+    if limit < 1 {
+        return Err(AppError::BadRequest("limit must be at least 1".into()));
+    }
+
+    let metas = db::list_script_meta_paged(&state.db, &user.user_id, limit, offset)
         .await
         .map_err(AppError::Internal)?;
 
@@ -248,7 +268,7 @@ pub async fn put_script(
                     script_id = %script_id,
                     user_id = %user.user_id,
                     rollback_err = %rollback_err,
-                    "etag mismatch on R2 write; Postgres rollback also failed — manual cleanup required"
+                    "etag mismatch on R2 write; Postgres rollback also failed"
                 );
             }
             return Err(AppError::PreconditionFailed);
@@ -262,7 +282,7 @@ pub async fn put_script(
                     user_id = %user.user_id,
                     r2_err = %e,
                     rollback_err = %rollback_err,
-                    "R2 write failed; Postgres rollback also failed — manual cleanup required"
+                    "R2 write failed; Postgres rollback also failed"
                 );
             }
             return Err(AppError::Internal(e));
