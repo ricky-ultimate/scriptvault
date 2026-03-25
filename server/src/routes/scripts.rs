@@ -64,7 +64,9 @@ fn validate_tags(tags: &[String]) -> Result<(), AppError> {
             )));
         }
         if tag.is_empty() {
-            return Err(AppError::BadRequest("tags must not be empty strings".into()));
+            return Err(AppError::BadRequest(
+                "tags must not be empty strings".into(),
+            ));
         }
     }
     Ok(())

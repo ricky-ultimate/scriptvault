@@ -316,7 +316,10 @@ pub enum SyncAction {
 
 #[derive(Args, Debug)]
 pub struct SyncPushPullArgs {
-    #[arg(long, help = "Show what would be pushed or pulled without making changes")]
+    #[arg(
+        long,
+        help = "Show what would be pushed or pulled without making changes"
+    )]
     pub dry_run: bool,
 }
 

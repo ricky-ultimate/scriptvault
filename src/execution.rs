@@ -15,8 +15,8 @@ use std::process::{Command, Stdio};
 use std::time::Instant;
 
 const SAFE_ENV_VARS: &[&str] = &[
-    "PATH", "TERM", "LANG", "LC_ALL", "LC_CTYPE", "HOME", "USER",
-    "LOGNAME", "SHELL", "TZ", "TMPDIR", "TEMP", "TMP",
+    "PATH", "TERM", "LANG", "LC_ALL", "LC_CTYPE", "HOME", "USER", "LOGNAME", "SHELL", "TZ",
+    "TMPDIR", "TEMP", "TMP",
 ];
 
 fn build_safe_env() -> HashMap<String, String> {
@@ -61,7 +61,15 @@ pub fn run_script(args: RunArgs) -> Result<()> {
         .clone();
 
     if let Some(ref target) = args.ssh {
-        return run_script_remote(&script, &args.args, target, args.ssh_port, args.ssh_identity.as_deref(), args.dry_run, args.verbose);
+        return run_script_remote(
+            &script,
+            &args.args,
+            target,
+            args.ssh_port,
+            args.ssh_identity.as_deref(),
+            args.dry_run,
+            args.verbose,
+        );
     }
 
     check_interpreter_available(&script.language)?;
@@ -69,7 +77,9 @@ pub fn run_script(args: RunArgs) -> Result<()> {
     if !script.is_safe() {
         println!(
             "{}",
-            "Warning: This script contains potentially dangerous commands.".red().bold()
+            "Warning: This script contains potentially dangerous commands."
+                .red()
+                .bold()
         );
         if !ci_mode && !args.dry_run {
             let proceed = Confirm::new()
@@ -182,16 +192,25 @@ fn run_script_remote(
     dry_run: bool,
     verbose: bool,
 ) -> Result<()> {
-    which::which("ssh").map_err(|_| anyhow!("'ssh' not found in PATH. Install OpenSSH to use --ssh."))?;
+    which::which("ssh")
+        .map_err(|_| anyhow!("'ssh' not found in PATH. Install OpenSSH to use --ssh."))?;
 
-    let remote_path = format!("/tmp/sv_{}.{}", uuid::Uuid::new_v4(), script.language.extension());
+    let remote_path = format!(
+        "/tmp/sv_{}.{}",
+        uuid::Uuid::new_v4(),
+        script.language.extension()
+    );
 
     if dry_run {
         println!("{}", "Dry run — remote execution plan:".yellow().bold());
         println!("  Target:      {}", target.cyan());
         println!("  Port:        {}", port);
         println!("  Remote path: {}", remote_path.dimmed());
-        println!("  Script:      {} {}", script.name.yellow(), script.version.dimmed());
+        println!(
+            "  Script:      {} {}",
+            script.name.yellow(),
+            script.version.dimmed()
+        );
         if !run_args.is_empty() {
             println!("  Arguments:   {}", run_args.join(" ").cyan());
         }
@@ -228,24 +247,32 @@ fn run_script_remote(
 
     let mut copy_cmd = std::process::Command::new("ssh");
     copy_cmd
-        .arg("-p").arg(port.to_string())
-        .arg("-o").arg("StrictHostKeyChecking=accept-new")
-        .arg("-o").arg("BatchMode=yes");
+        .arg("-p")
+        .arg(port.to_string())
+        .arg("-o")
+        .arg("StrictHostKeyChecking=accept-new")
+        .arg("-o")
+        .arg("BatchMode=yes");
     if let Some(key) = identity {
         copy_cmd.arg("-i").arg(key);
     }
     copy_cmd
         .arg(target)
-        .arg(format!("cat > {} && chmod 700 {}", remote_path, remote_path))
+        .arg(format!(
+            "cat > {} && chmod 700 {}",
+            remote_path, remote_path
+        ))
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::inherit());
 
-    let mut copy_child = copy_cmd.spawn()
+    let mut copy_child = copy_cmd
+        .spawn()
         .map_err(|e| anyhow!("Failed to open SSH connection to {}: {}", target, e))?;
 
     if let Some(mut stdin) = copy_child.stdin.take() {
-        stdin.write_all(script.content.as_bytes())
+        stdin
+            .write_all(script.content.as_bytes())
             .map_err(|e| anyhow!("Failed to write script content over SSH: {}", e))?;
     }
 
@@ -256,9 +283,12 @@ fn run_script_remote(
 
     let mut exec_cmd = std::process::Command::new("ssh");
     exec_cmd
-        .arg("-p").arg(port.to_string())
-        .arg("-o").arg("StrictHostKeyChecking=accept-new")
-        .arg("-o").arg("BatchMode=yes");
+        .arg("-p")
+        .arg(port.to_string())
+        .arg("-o")
+        .arg("StrictHostKeyChecking=accept-new")
+        .arg("-o")
+        .arg("BatchMode=yes");
     if let Some(key) = identity {
         exec_cmd.arg("-i").arg(key);
     }
@@ -269,7 +299,10 @@ fn run_script_remote(
         format!("{} {}", remote_path, run_args.join(" "))
     };
 
-    let cleanup = format!("{}; _exit=$?; rm -f {}; exit $_exit", script_call, remote_path);
+    let cleanup = format!(
+        "{}; _exit=$?; rm -f {}; exit $_exit",
+        script_call, remote_path
+    );
 
     exec_cmd
         .arg(target)
@@ -278,7 +311,8 @@ fn run_script_remote(
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
 
-    let status = exec_cmd.spawn()
+    let status = exec_cmd
+        .spawn()
         .map_err(|e| anyhow!("Failed to execute script on remote host {}: {}", target, e))?
         .wait()?;
 
@@ -483,12 +517,24 @@ fn spawn_and_collect(
 
     Ok(ExecutionResult {
         exit_code: status.code().unwrap_or(1),
-        output: if stdout_str.is_empty() { None } else { Some(stdout_str) },
-        error: if stderr_str.is_empty() { None } else { Some(stderr_str) },
+        output: if stdout_str.is_empty() {
+            None
+        } else {
+            Some(stdout_str)
+        },
+        error: if stderr_str.is_empty() {
+            None
+        } else {
+            Some(stderr_str)
+        },
     })
 }
 
-fn execute_script_safe_env(script: &Script, args: &[String], verbose: bool) -> Result<ExecutionResult> {
+fn execute_script_safe_env(
+    script: &Script,
+    args: &[String],
+    verbose: bool,
+) -> Result<ExecutionResult> {
     let script_path = write_temp_script(script)?;
     let (interpreter, interpreter_args) = get_interpreter_command(&script.language);
     let safe_env = build_safe_env();
@@ -673,7 +719,11 @@ pub fn show_history(args: HistoryArgs) -> Result<()> {
     );
     println!("{}", "─".repeat(80).dimmed());
 
-    let limit = if args.recent { 10 } else { DEFAULT_HISTORY_LIMIT };
+    let limit = if args.recent {
+        10
+    } else {
+        DEFAULT_HISTORY_LIMIT
+    };
 
     for record in filtered.iter().rev().take(limit) {
         let time = record.executed_at.format("%Y-%m-%d %H:%M:%S");
@@ -738,15 +788,21 @@ pub fn share_script(_args: crate::cli::ShareArgs) -> Result<()> {
 }
 
 pub fn list_team_members() -> Result<()> {
-    Err(anyhow!("team features are not yet available in this version"))
+    Err(anyhow!(
+        "team features are not yet available in this version"
+    ))
 }
 
 pub fn list_team_scripts() -> Result<()> {
-    Err(anyhow!("team features are not yet available in this version"))
+    Err(anyhow!(
+        "team features are not yet available in this version"
+    ))
 }
 
 pub fn show_permissions() -> Result<()> {
-    Err(anyhow!("team features are not yet available in this version"))
+    Err(anyhow!(
+        "team features are not yet available in this version"
+    ))
 }
 
 pub fn recommend_scripts() -> Result<()> {

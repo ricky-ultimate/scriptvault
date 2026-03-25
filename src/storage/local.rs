@@ -363,11 +363,27 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let s = storage(&tmp);
         for i in 0..10 {
-            s.save_script(&make_script(&format!("script-{}", i))).unwrap();
+            s.save_script(&make_script(&format!("script-{}", i)))
+                .unwrap();
         }
-        let page1 = s.list_summaries(&ListOptions { limit: 4, offset: 0 }).unwrap();
-        let page2 = s.list_summaries(&ListOptions { limit: 4, offset: 4 }).unwrap();
-        let page3 = s.list_summaries(&ListOptions { limit: 4, offset: 8 }).unwrap();
+        let page1 = s
+            .list_summaries(&ListOptions {
+                limit: 4,
+                offset: 0,
+            })
+            .unwrap();
+        let page2 = s
+            .list_summaries(&ListOptions {
+                limit: 4,
+                offset: 4,
+            })
+            .unwrap();
+        let page3 = s
+            .list_summaries(&ListOptions {
+                limit: 4,
+                offset: 8,
+            })
+            .unwrap();
         assert_eq!(page1.len(), 4);
         assert_eq!(page2.len(), 4);
         assert_eq!(page3.len(), 2);

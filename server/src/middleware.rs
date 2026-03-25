@@ -1,9 +1,4 @@
-use axum::{
-    body::Body,
-    extract::Request,
-    http::Response,
-    middleware::Next,
-};
+use axum::{body::Body, extract::Request, http::Response, middleware::Next};
 use uuid::Uuid;
 
 pub async fn request_id(mut req: Request, next: Next) -> Response<Body> {

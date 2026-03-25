@@ -215,8 +215,8 @@ impl SyncManager {
     }
 
     pub fn remote_list(&self) -> Result<Vec<crate::sync::remote::RemoteScriptMeta>> {
-    self.remote.list_scripts()
-}
+        self.remote.list_scripts()
+    }
 }
 
 #[cfg(test)]

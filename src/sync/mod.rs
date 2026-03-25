@@ -60,7 +60,10 @@ fn show_dry_run_push() -> Result<()> {
         return Ok(());
     }
 
-    println!("{}", "Dry run — scripts that would be pushed:".yellow().bold());
+    println!(
+        "{}",
+        "Dry run — scripts that would be pushed:".yellow().bold()
+    );
     println!();
     for script in &pending {
         println!("  {} {}", script.name.yellow(), script.version.dimmed());
@@ -91,7 +94,10 @@ fn show_dry_run_pull() -> Result<()> {
         return Ok(());
     }
 
-    println!("{}", "Dry run — scripts that would be pulled:".yellow().bold());
+    println!(
+        "{}",
+        "Dry run — scripts that would be pulled:".yellow().bold()
+    );
     println!();
     for meta in &remote_only {
         println!("  {} {}", meta.name.yellow(), meta.version.dimmed());

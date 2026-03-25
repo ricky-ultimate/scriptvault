@@ -78,8 +78,14 @@ pub fn run_doctor() -> Result<()> {
                         .call()
                     {
                         Ok(resp) if resp.status() == 200 => println!("{}", "valid".green()),
-                        Ok(resp) if resp.status() == 401 => println!("{}", "invalid or expired".red()),
-                        Ok(resp) => println!("{} (status {})", "unexpected response".yellow(), resp.status()),
+                        Ok(resp) if resp.status() == 401 => {
+                            println!("{}", "invalid or expired".red())
+                        }
+                        Ok(resp) => println!(
+                            "{} (status {})",
+                            "unexpected response".yellow(),
+                            resp.status()
+                        ),
                         Err(e) => println!("{} ({})", "check failed".red(), e),
                     }
                 }
