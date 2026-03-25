@@ -139,6 +139,12 @@ pub struct ListArgs {
 
     #[arg(long, help = "Sort by most recently run")]
     pub recent: bool,
+
+    #[arg(long, default_value = "50", help = "Maximum number of scripts to return")]
+    pub limit: usize,
+
+    #[arg(long, default_value = "0", help = "Number of scripts to skip")]
+    pub offset: usize,
 }
 
 #[derive(Args, Debug)]
@@ -164,9 +170,9 @@ pub struct RunArgs {
 
     #[arg(
         long,
-        help = "Isolated environment: cleared env vars, private HOME and TMPDIR. Does not provide kernel-level sandboxing."
+        help = "Isolated environment: clears env vars, uses private HOME and TMPDIR. Does not provide kernel-level sandboxing or syscall filtering."
     )]
-    pub sandbox: bool,
+    pub isolated: bool,
 
     #[arg(long, help = "Require confirmation before running")]
     pub confirm: bool,
