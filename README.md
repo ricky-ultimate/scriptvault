@@ -21,12 +21,6 @@ curl -fsSL https://raw.githubusercontent.com/ricky-ultimate/scriptvault/main/ins
 iwr https://raw.githubusercontent.com/ricky-ultimate/scriptvault/main/install.ps1 | iex
 ```
 
-**To release a new version**, just tag and push:
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
 **Build from source**
 Requires Rust (install via [rustup.rs](https://rustup.rs)).
 ```bash
