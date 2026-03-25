@@ -58,6 +58,10 @@ pub fn run_doctor() -> Result<()> {
         }
     }
 
+    println!();
+    println!("  {}:", "SSH".bold());
+    check_ssh_doctor();
+
     let config = crate::config::Config::load()?;
     let probe_url = health_url(&config.api_endpoint);
 
@@ -105,6 +109,76 @@ pub fn run_doctor() -> Result<()> {
     println!();
     println!("{}", "Health check complete.".green().bold());
     Ok(())
+}
+
+fn check_ssh_doctor() {
+    print!("    ssh binary... ");
+    if which::which("ssh").is_ok() {
+        println!("{}", "ok".green());
+    } else {
+        println!("{}", "not found".yellow());
+        return;
+    }
+
+    print!("    ssh-agent socket... ");
+    match std::env::var("SSH_AUTH_SOCK") {
+        Err(_) => {
+            println!(
+                "{} (SSH_AUTH_SOCK not set)",
+                "not running".yellow()
+            );
+            return;
+        }
+        Ok(sock) if sock.is_empty() => {
+            println!(
+                "{} (SSH_AUTH_SOCK is empty)",
+                "not running".yellow()
+            );
+            return;
+        }
+        Ok(sock) => {
+            if std::path::Path::new(&sock).exists() {
+                println!("{}", "ok".green());
+            } else {
+                println!(
+                    "{} (socket path does not exist: {})",
+                    "stale".yellow(),
+                    sock
+                );
+                return;
+            }
+        }
+    }
+
+    print!("    ssh-agent keys... ");
+    match std::process::Command::new("ssh-add")
+        .arg("-l")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+    {
+        Err(_) => println!("{}", "ssh-add not found".yellow()),
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            match out.status.code() {
+                Some(0) => {
+                    let count = stdout.lines().count();
+                    println!("{} ({} loaded)", "ok".green(), count);
+                }
+                Some(1) => {
+                    let msg = stderr.trim();
+                    if msg.contains("no identities") || stdout.contains("no identities") {
+                        println!("{}", "no keys loaded".yellow());
+                    } else {
+                        println!("{} ({})", "agent error".yellow(), msg);
+                    }
+                }
+                Some(2) => println!("{} (cannot connect to agent)", "error".red()),
+                _ => println!("{}", "unknown".yellow()),
+            }
+        }
+    }
 }
 
 pub fn check_status() -> Result<()> {
