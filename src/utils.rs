@@ -123,17 +123,11 @@ fn check_ssh_doctor() {
     print!("    ssh-agent socket... ");
     match std::env::var("SSH_AUTH_SOCK") {
         Err(_) => {
-            println!(
-                "{} (SSH_AUTH_SOCK not set)",
-                "not running".yellow()
-            );
+            println!("{} (SSH_AUTH_SOCK not set)", "not running".yellow());
             return;
         }
         Ok(sock) if sock.is_empty() => {
-            println!(
-                "{} (SSH_AUTH_SOCK is empty)",
-                "not running".yellow()
-            );
+            println!("{} (SSH_AUTH_SOCK is empty)", "not running".yellow());
             return;
         }
         Ok(sock) => {

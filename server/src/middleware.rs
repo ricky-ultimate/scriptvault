@@ -4,11 +4,7 @@ use axum::{
     http::{Response, StatusCode},
     middleware::Next,
 };
-use governor::{
-    Quota, RateLimiter,
-    clock::DefaultClock,
-    state::keyed::DefaultKeyedStateStore,
-};
+use governor::{Quota, RateLimiter, clock::DefaultClock, state::keyed::DefaultKeyedStateStore};
 use std::{
     net::IpAddr,
     num::NonZeroU32,

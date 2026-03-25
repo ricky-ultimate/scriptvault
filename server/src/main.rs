@@ -21,7 +21,11 @@ use state::AppState;
 
 fn build_cors() -> CorsLayer {
     let raw = std::env::var("ALLOWED_ORIGINS").unwrap_or_default();
-    let origins: Vec<&str> = raw.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    let origins: Vec<&str> = raw
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
 
     if origins.is_empty() {
         tracing::warn!("ALLOWED_ORIGINS not set; allowing any origin");
@@ -31,10 +35,8 @@ fn build_cors() -> CorsLayer {
             .allow_headers(Any);
     }
 
-    let parsed: Vec<axum::http::HeaderValue> = origins
-        .iter()
-        .filter_map(|o| o.parse().ok())
-        .collect();
+    let parsed: Vec<axum::http::HeaderValue> =
+        origins.iter().filter_map(|o| o.parse().ok()).collect();
 
     if parsed.is_empty() {
         tracing::warn!("ALLOWED_ORIGINS contained no valid values; allowing any origin");
