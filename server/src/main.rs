@@ -1,6 +1,7 @@
 mod auth;
 mod db;
 mod error;
+mod middleware;
 mod r2;
 mod routes;
 mod state;
@@ -11,6 +12,9 @@ use axum::{
 };
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
+use tokio::signal;
+use tower_http::cors::{Any, CorsLayer};
+use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use state::AppState;
@@ -25,13 +29,17 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    tracing::info!("Starting ScriptVault server...");
+    tracing::info!("Starting ScriptVault server");
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    tracing::debug!("Database URL configured");
+
+    let max_connections: u32 = std::env::var("DB_MAX_CONNECTIONS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(20);
 
     let pool = PgPoolOptions::new()
-        .max_connections(5)
+        .max_connections(max_connections)
         .connect(&database_url)
         .await?;
     tracing::info!("Connected to database");
@@ -52,6 +60,11 @@ async fn main() -> anyhow::Result<()> {
         r2: Arc::new(r2),
     };
 
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
     let app = Router::new()
         .route("/health", get(routes::health))
         .route("/auth/register", post(routes::auth::register))
@@ -60,17 +73,49 @@ async fn main() -> anyhow::Result<()> {
         .route("/scripts/:id", get(routes::scripts::get_script))
         .route("/scripts/:id", put(routes::scripts::put_script))
         .route("/scripts/:id", delete(routes::scripts::delete_script))
+        .layer(TraceLayer::new_for_http())
+        .layer(cors)
+        .layer(axum::middleware::from_fn(middleware::request_id))
         .with_state(state);
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "8080".into());
     let addr = format!("0.0.0.0:{}", port);
 
-    tracing::info!("Attempting to bind to {}", addr);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    tracing::info!("Successfully bound to {}, starting server", addr);
-
     tracing::info!("Server listening on http://{}", addr);
-    axum::serve(listener, app).await?;
 
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
+    tracing::info!("Server shut down gracefully");
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            tracing::info!("Received Ctrl+C, shutting down");
+        }
+        _ = terminate => {
+            tracing::info!("Received SIGTERM, shutting down");
+        }
+    }
 }
