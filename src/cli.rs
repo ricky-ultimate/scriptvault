@@ -37,6 +37,7 @@ pub enum Command {
     Export(ExportArgs),
     Sync(SyncCommand),
     Storage(StorageCommand),
+    Adapt(AdaptArgs),
     Doctor,
     Status,
 }
@@ -352,4 +353,22 @@ pub enum StorageAction {
     Setup,
     Test,
     Info,
+}
+
+#[derive(Args, Debug)]
+pub struct AdaptArgs {
+    #[arg(value_name = "SCRIPT", help = "Name of the script to adapt")]
+    pub script: String,
+
+    #[arg(
+        long,
+        help = "Write adapted content to this file instead of updating the vault"
+    )]
+    pub output: Option<String>,
+
+    #[arg(long, help = "Apply changes without prompting for confirmation")]
+    pub yes: bool,
+
+    #[arg(long, help = "Show what would change without applying anything")]
+    pub dry_run: bool,
 }

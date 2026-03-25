@@ -1,3 +1,4 @@
+pub mod adapt;
 pub mod auth;
 pub mod cli;
 pub mod config;
@@ -322,6 +323,68 @@ mod tests {
             config.clear_auth();
             assert!(!config.is_authenticated());
             assert!(!config.has_identity());
+        }
+    }
+
+    mod adapt_tests {
+        use crate::adapt::{apply_substitutions, build_substitutions};
+
+        #[test]
+        fn test_no_substitutions_same_directory() {
+            let subs = build_substitutions(
+                Some("/home/alice/project"),
+                Some("/home/alice/project"),
+            );
+            assert!(subs.is_empty());
+        }
+
+        #[test]
+        fn test_directory_substitution() {
+            let subs = build_substitutions(
+                Some("/home/alice/project"),
+                Some("/home/bob/project"),
+            );
+            assert!(!subs.is_empty());
+            let adapted = apply_substitutions(
+                "cd /home/alice/project && ./run.sh",
+                &subs,
+            );
+            assert!(adapted.contains("/home/bob/project"));
+            assert!(!adapted.contains("/home/alice/project"));
+        }
+
+        #[test]
+        fn test_home_substitution_extracted() {
+            let subs = build_substitutions(
+                Some("/home/alice/project"),
+                Some("/home/bob/other"),
+            );
+            let kinds: Vec<&str> = subs.iter().map(|s| s.kind).collect();
+            assert!(kinds.contains(&"home directory"));
+        }
+
+        #[test]
+        fn test_substitution_replaces_all_occurrences() {
+            let subs = build_substitutions(
+                Some("/home/alice/app"),
+                Some("/home/bob/app"),
+            );
+            let content = "echo /home/alice/app\ncd /home/alice/app/src";
+            let adapted = apply_substitutions(content, &subs);
+            assert_eq!(adapted.matches("/home/alice").count(), 0);
+            assert_eq!(adapted.matches("/home/bob").count(), 2);
+        }
+
+        #[test]
+        fn test_no_substitutions_when_script_dir_unknown() {
+            let subs = build_substitutions(None, Some("/home/bob/project"));
+            assert!(subs.is_empty());
+        }
+
+        #[test]
+        fn test_no_substitutions_when_current_dir_unknown() {
+            let subs = build_substitutions(Some("/home/alice/project"), None);
+            assert!(subs.is_empty());
         }
     }
 }

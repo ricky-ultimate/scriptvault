@@ -1,3 +1,4 @@
+mod adapt;
 mod auth;
 mod cli;
 mod config;
@@ -86,6 +87,7 @@ fn run() -> Result<()> {
         Command::Storage(storage_cmd) => {
             storage::commands::handle_storage_command(storage_cmd.action)?
         }
+        Command::Adapt(args) => adapt::adapt_script(args)?,
         Command::Doctor => utils::run_doctor()?,
         Command::Status => utils::check_status()?,
     }
