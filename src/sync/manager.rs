@@ -263,6 +263,8 @@ mod tests {
                     version: s.version.clone(),
                     updated_at: s.updated_at,
                     hash: s.metadata.hash.clone(),
+                    tags: s.tags.clone(),
+                    description: s.description.clone(),
                 })
                 .collect())
         }
@@ -287,6 +289,8 @@ mod tests {
                 version: script.version.clone(),
                 updated_at: script.updated_at,
                 hash: script.metadata.hash.clone(),
+                tags: script.tags.clone(),
+                description: script.description.clone(),
             })
         }
 
@@ -383,6 +387,8 @@ mod tests {
             version: script.version.clone(),
             updated_at: script.updated_at,
             hash: script.metadata.hash.clone(),
+            tags: vec![],
+            description: None,
         };
         assert_eq!(
             manager.compute_status(&script, Some(&meta)),
@@ -401,6 +407,8 @@ mod tests {
             version: "v1.0.1".to_string(),
             updated_at: script.updated_at,
             hash: "completely_different_hash".to_string(),
+            tags: vec![],
+            description: None,
         };
         assert_eq!(
             manager.compute_status(&script, Some(&meta)),
@@ -422,6 +430,8 @@ mod tests {
             version: script.version.clone(),
             updated_at: last_sync - chrono::Duration::minutes(1),
             hash: script.metadata.hash.clone(),
+            tags: vec![],
+            description: None,
         };
         assert_eq!(
             manager.compute_status(&script, Some(&meta)),
@@ -443,6 +453,8 @@ mod tests {
             version: "v1.0.1".to_string(),
             updated_at: Utc::now(),
             hash: "newer_hash".to_string(),
+            tags: vec![],
+            description: None,
         };
         assert_eq!(
             manager.compute_status(&script, Some(&meta)),
@@ -464,6 +476,8 @@ mod tests {
             version: "v1.0.1".to_string(),
             updated_at: Utc::now(),
             hash: "different_hash".to_string(),
+            tags: vec![],
+            description: None,
         };
         assert_eq!(
             manager.compute_status(&script, Some(&meta)),
@@ -485,6 +499,8 @@ mod tests {
             version: script.version.clone(),
             updated_at: last_sync - chrono::Duration::seconds(10),
             hash: script.metadata.hash.clone(),
+            tags: vec![],
+            description: None,
         };
         assert_eq!(
             manager.compute_status(&script, Some(&meta)),
