@@ -67,6 +67,7 @@ pub fn run_script(args: RunArgs) -> Result<()> {
             target,
             args.ssh_port,
             args.ssh_identity.as_deref(),
+            args.ssh_agent,
             args.dry_run,
             args.verbose,
         );
@@ -189,6 +190,7 @@ fn run_script_remote(
     target: &str,
     port: u16,
     identity: Option<&str>,
+    forward_agent: bool,
     dry_run: bool,
     verbose: bool,
 ) -> Result<()> {
@@ -203,24 +205,26 @@ fn run_script_remote(
 
     if dry_run {
         println!("{}", "Dry run — remote execution plan:".yellow().bold());
-        println!("  Target:      {}", target.cyan());
-        println!("  Port:        {}", port);
-        println!("  Remote path: {}", remote_path.dimmed());
+        println!("  Target:        {}", target.cyan());
+        println!("  Port:          {}", port);
+        println!("  Remote path:   {}", remote_path.dimmed());
         println!(
-            "  Script:      {} {}",
+            "  Script:        {} {}",
             script.name.yellow(),
             script.version.dimmed()
         );
+        if forward_agent {
+            println!("  Agent forward: yes");
+        }
         if !run_args.is_empty() {
-            println!("  Arguments:   {}", run_args.join(" ").cyan());
+            println!("  Arguments:     {}", run_args.join(" ").cyan());
         }
         println!();
         println!("{}", "Dry run complete. Script was not executed.".yellow());
         return Ok(());
     }
 
-    let mut ssh_base: Vec<String> = vec![
-        "ssh".into(),
+    let mut base_ssh_args: Vec<String> = vec![
         "-p".into(),
         port.to_string(),
         "-o".into(),
@@ -229,14 +233,21 @@ fn run_script_remote(
         "BatchMode=yes".into(),
     ];
 
+    if forward_agent {
+        base_ssh_args.push("-A".into());
+    }
+
     if let Some(key) = identity {
-        ssh_base.push("-i".into());
-        ssh_base.push(key.to_string());
+        base_ssh_args.push("-i".into());
+        base_ssh_args.push(key.to_string());
     }
 
     if verbose {
         println!("  Target:      {}", target);
         println!("  Remote path: {}", remote_path);
+        if forward_agent {
+            println!("  Agent forward: enabled");
+        }
         println!();
         println!("  {}:", "Content".dimmed());
         for line in script.content.lines() {
@@ -246,16 +257,7 @@ fn run_script_remote(
     }
 
     let mut copy_cmd = std::process::Command::new("ssh");
-    copy_cmd
-        .arg("-p")
-        .arg(port.to_string())
-        .arg("-o")
-        .arg("StrictHostKeyChecking=accept-new")
-        .arg("-o")
-        .arg("BatchMode=yes");
-    if let Some(key) = identity {
-        copy_cmd.arg("-i").arg(key);
-    }
+    copy_cmd.args(&base_ssh_args);
     copy_cmd
         .arg(target)
         .arg(format!(
@@ -282,16 +284,7 @@ fn run_script_remote(
     }
 
     let mut exec_cmd = std::process::Command::new("ssh");
-    exec_cmd
-        .arg("-p")
-        .arg(port.to_string())
-        .arg("-o")
-        .arg("StrictHostKeyChecking=accept-new")
-        .arg("-o")
-        .arg("BatchMode=yes");
-    if let Some(key) = identity {
-        exec_cmd.arg("-i").arg(key);
-    }
+    exec_cmd.args(&base_ssh_args);
 
     let script_call = if run_args.is_empty() {
         remote_path.clone()
@@ -326,7 +319,6 @@ fn run_script_remote(
 
     Ok(())
 }
-
 fn pull_script_update(script_name: &str, config: &Config) -> Result<()> {
     use crate::storage::StorageBackend;
     use crate::sync::remote::{HttpRemoteBackend, RemoteBackend};

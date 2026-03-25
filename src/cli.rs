@@ -198,6 +198,12 @@ pub struct RunArgs {
         help = "Path to SSH identity file (used with --ssh)"
     )]
     pub ssh_identity: Option<String>,
+
+    #[arg(
+        long,
+        help = "Forward the local SSH agent to the remote host (used with --ssh)"
+    )]
+    pub ssh_agent: bool,
 }
 
 #[derive(Args, Debug)]
