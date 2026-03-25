@@ -5,7 +5,8 @@ use axum::{
     middleware::Next,
 };
 use governor::{
-    DefaultDirectRateLimiter, Quota, RateLimiter, clock::DefaultClock,
+    Quota, RateLimiter,
+    clock::DefaultClock,
     state::keyed::DefaultKeyedStateStore,
 };
 use std::{
@@ -14,16 +15,6 @@ use std::{
     sync::{Arc, OnceLock},
 };
 use uuid::Uuid;
-
-pub async fn request_id(mut req: Request, next: Next) -> Response<Body> {
-    let request_id = Uuid::new_v4().to_string();
-    req.extensions_mut().insert(RequestId(request_id.clone()));
-    let mut response = next.run(req).await;
-    response
-        .headers_mut()
-        .insert("x-request-id", request_id.parse().unwrap());
-    response
-}
 
 #[derive(Clone)]
 pub struct RequestId(pub String);
@@ -39,7 +30,27 @@ fn global_limiter() -> &'static IpRateLimiter {
     })
 }
 
+pub async fn request_id(mut req: Request, next: Next) -> Response<Body> {
+    let id = Uuid::new_v4().to_string();
+    req.extensions_mut().insert(RequestId(id.clone()));
+
+    let span = tracing::info_span!("request", request_id = %id);
+    let _guard = span.enter();
+
+    let mut response = next.run(req).await;
+    response
+        .headers_mut()
+        .insert("x-request-id", id.parse().unwrap());
+    response
+}
+
 pub async fn rate_limit(req: Request, next: Next) -> Response<Body> {
+    let request_id = req
+        .extensions()
+        .get::<RequestId>()
+        .map(|r| r.0.clone())
+        .unwrap_or_default();
+
     let ip = req
         .extensions()
         .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
@@ -47,9 +58,11 @@ pub async fn rate_limit(req: Request, next: Next) -> Response<Body> {
         .unwrap_or(IpAddr::from([127, 0, 0, 1]));
 
     if global_limiter().check_key(&ip).is_err() {
+        tracing::warn!(request_id = %request_id, ip = %ip, "rate limit exceeded");
         return Response::builder()
             .status(StatusCode::TOO_MANY_REQUESTS)
             .header("content-type", "application/json")
+            .header("x-request-id", request_id)
             .body(Body::from(r#"{"error":"rate limit exceeded"}"#))
             .unwrap();
     }
