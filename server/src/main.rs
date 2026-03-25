@@ -36,8 +36,8 @@ async fn main() -> anyhow::Result<()> {
         .await?;
     tracing::info!("Connected to database");
 
-    db::init_tables(&pool).await?;
-    tracing::info!("Database tables initialized");
+    db::run_migrations(&pool).await?;
+    tracing::info!("Database migrations applied");
 
     let r2 = r2::R2Client::new(
         &std::env::var("R2_ACCOUNT_ID").expect("R2_ACCOUNT_ID must be set"),

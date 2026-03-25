@@ -14,54 +14,11 @@ pub struct CreatedApiKey {
     pub plaintext: String,
 }
 
-pub async fn init_tables(pool: &PgPool) -> Result<()> {
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS users (
-            id          TEXT PRIMARY KEY,
-            username    TEXT UNIQUE NOT NULL,
-            created_at  TIMESTAMPTZ NOT NULL
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS api_keys (
-            id           TEXT PRIMARY KEY,
-            user_id      TEXT NOT NULL REFERENCES users(id),
-            key_hash     TEXT UNIQUE NOT NULL,
-            label        TEXT,
-            created_at   TIMESTAMPTZ NOT NULL,
-            last_used_at TIMESTAMPTZ
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS script_meta (
-            id          TEXT NOT NULL,
-            user_id     TEXT NOT NULL REFERENCES users(id),
-            name        TEXT NOT NULL,
-            version     TEXT NOT NULL,
-            hash        TEXT NOT NULL,
-            tags        TEXT[] NOT NULL DEFAULT '{}',
-            description TEXT,
-            updated_at  TIMESTAMPTZ NOT NULL,
-            PRIMARY KEY (id, user_id)
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query(
-        "ALTER TABLE script_meta
-         ADD COLUMN IF NOT EXISTS tags        TEXT[] NOT NULL DEFAULT '{}',
-         ADD COLUMN IF NOT EXISTS description TEXT",
-    )
-    .execute(pool)
-    .await?;
-
+pub async fn run_migrations(pool: &PgPool) -> Result<()> {
+    sqlx::migrate!("./migrations")
+        .run(pool)
+        .await
+        .map_err(|e| anyhow::anyhow!("migration failed: {}", e))?;
     Ok(())
 }
 
