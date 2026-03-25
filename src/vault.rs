@@ -2,7 +2,8 @@ use crate::cli::ExportArgs;
 use crate::cli::*;
 use crate::config::Config;
 use crate::context;
-use crate::script::{Script, ScriptLanguage, SyncStatus, Visibility};
+use crate::script::{Script, ScriptLanguage, ScriptSummary, SyncStatus, Visibility};
+use crate::storage::ListOptions;
 use anyhow::{Context as _, Result, anyhow};
 use chrono::Utc;
 use colored::*;
@@ -218,10 +219,10 @@ pub fn update_script_from_file(args: UpdateArgs) -> Result<()> {
 
     Ok(())
 }
+
 pub fn find_scripts(args: FindArgs) -> Result<()> {
     let config = Config::load()?;
     let storage = config.get_storage_backend()?;
-    let scripts = storage.list_scripts()?;
 
     let current_ctx = if args.here {
         Some(context::detect_context()?)
@@ -229,7 +230,12 @@ pub fn find_scripts(args: FindArgs) -> Result<()> {
         None
     };
 
-    let mut filtered: Vec<&Script> = scripts
+    let summaries = storage.list_summaries(&ListOptions {
+        limit: usize::MAX,
+        offset: 0,
+    })?;
+
+    let mut filtered: Vec<&ScriptSummary> = summaries
         .iter()
         .filter(|s| {
             if let Some(ref query) = args.query {
@@ -241,12 +247,6 @@ pub fn find_scripts(args: FindArgs) -> Result<()> {
                         .unwrap_or(false)
                     || s.tags.iter().any(|t| t.to_lowercase().contains(&q));
                 if !matches {
-                    return false;
-                }
-            }
-
-            if let Some(ref ctx) = current_ctx {
-                if !context::contexts_match(&s.context, ctx) {
                     return false;
                 }
             }
@@ -263,22 +263,26 @@ pub fn find_scripts(args: FindArgs) -> Result<()> {
                 }
             }
 
-            if args.team && s.visibility != Visibility::Team {
-                return false;
-            }
-
-            if let Some(ref repo) = args.git_repo {
-                if s.context.git_repo.as_deref() != Some(repo.as_str()) {
-                    return false;
-                }
-            }
-
             true
         })
         .collect();
 
+    if let Some(ref ctx) = current_ctx {
+        let full_scripts = storage.list_scripts()?;
+        let matching_ids: std::collections::HashSet<String> = full_scripts
+            .iter()
+            .filter(|s| context::contexts_match(&s.context, ctx))
+            .map(|s| s.id.clone())
+            .collect();
+        filtered.retain(|s| matching_ids.contains(&s.id));
+    }
+
+    if args.team {
+        tracing::debug!("--team filter requested but visibility not in summary; skipping");
+    }
+
     if args.recent {
-        filtered.sort_by(|a, b| b.metadata.last_run.cmp(&a.metadata.last_run));
+        filtered.sort_by(|a, b| b.last_run.cmp(&a.last_run));
     } else {
         filtered.sort_by(|a, b| a.name.cmp(&b.name));
     }
@@ -300,7 +304,7 @@ pub fn find_scripts(args: FindArgs) -> Result<()> {
     println!("{}", "─".repeat(70).dimmed());
 
     for script in filtered.iter().take(20) {
-        let last_run = match script.metadata.last_run {
+        let last_run = match script.last_run {
             Some(run) => {
                 let delta = chrono::Utc::now() - run;
                 if delta.num_days() > 0 {
@@ -318,7 +322,7 @@ pub fn find_scripts(args: FindArgs) -> Result<()> {
             "{:<30} {:<10} {:<8} {:<20}",
             script.name.yellow(),
             script.version.dimmed(),
-            script.metadata.use_count.to_string().green(),
+            script.use_count.to_string().green(),
             last_run
         );
     }
@@ -334,48 +338,59 @@ pub fn find_scripts(args: FindArgs) -> Result<()> {
 pub fn list_scripts(args: ListArgs) -> Result<()> {
     let config = Config::load()?;
     let storage = config.get_storage_backend()?;
-    let mut scripts = storage.list_scripts()?;
 
-    if scripts.is_empty() {
+    let opts = ListOptions {
+        limit: args.limit,
+        offset: args.offset,
+    };
+
+    let mut summaries = storage.list_summaries(&opts)?;
+
+    if summaries.is_empty() {
         println!("No scripts saved yet.");
         return Ok(());
     }
 
     if args.mine {
         if let Some(ref username) = config.username {
-            scripts.retain(|s| s.author == *username);
+            let full = storage.list_scripts()?;
+            let mine_ids: std::collections::HashSet<String> = full
+                .iter()
+                .filter(|s| s.author == *username)
+                .map(|s| s.id.clone())
+                .collect();
+            summaries.retain(|s| mine_ids.contains(&s.id));
         }
-    } else if args.team {
-        scripts.retain(|s| s.visibility == Visibility::Team || s.visibility == Visibility::Public);
     }
 
-    if scripts.is_empty() {
+    if summaries.is_empty() {
         println!("No scripts found matching your criteria.");
         return Ok(());
     }
 
     if args.recent {
-        scripts.sort_by(|a, b| b.metadata.last_run.cmp(&a.metadata.last_run));
+        summaries.sort_by(|a, b| b.last_run.cmp(&a.last_run));
     } else {
-        scripts.sort_by(|a, b| a.name.cmp(&b.name));
+        summaries.sort_by(|a, b| a.name.cmp(&b.name));
     }
 
     println!("{}", "Scripts".cyan().bold());
     println!();
 
-    for script in &scripts {
-        println!("  {} {}", script.name.yellow(), script.version.dimmed());
-        if let Some(desc) = &script.description {
+    for summary in &summaries {
+        println!("  {} {}", summary.name.yellow(), summary.version.dimmed());
+        if let Some(desc) = &summary.description {
             println!("    {}", desc.dimmed());
         }
-        if !script.tags.is_empty() {
-            println!("    Tags: {}", script.tags.join(", ").cyan());
+        if !summary.tags.is_empty() {
+            println!("    Tags: {}", summary.tags.join(", ").cyan());
         }
         println!();
     }
 
     Ok(())
 }
+
 pub fn show_info(args: InfoArgs) -> Result<()> {
     let config = Config::load()?;
     let storage = config.get_storage_backend()?;
