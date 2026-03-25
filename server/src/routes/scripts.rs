@@ -240,6 +240,20 @@ pub async fn put_script(
         if_match_raw.as_deref()
     };
 
+    let etag = match state
+        .r2
+        .put_script(&user.user_id, &script_id, &payload, effective_if_match)
+        .await
+    {
+        Ok(e) => e,
+        Err(e) if e.to_string() == "etag_mismatch" => {
+            return Err(AppError::PreconditionFailed);
+        }
+        Err(e) => {
+            return Err(AppError::Internal(e));
+        }
+    };
+
     db::upsert_script_meta(
         &state.db,
         &user.user_id,
@@ -253,41 +267,6 @@ pub async fn put_script(
     )
     .await
     .map_err(AppError::Internal)?;
-
-    let etag = match state
-        .r2
-        .put_script(&user.user_id, &script_id, &payload, effective_if_match)
-        .await
-    {
-        Ok(e) => e,
-        Err(e) if e.to_string() == "etag_mismatch" => {
-            if let Err(rollback_err) =
-                db::delete_script_meta(&state.db, &user.user_id, &script_id).await
-            {
-                tracing::error!(
-                    script_id = %script_id,
-                    user_id = %user.user_id,
-                    rollback_err = %rollback_err,
-                    "etag mismatch on R2 write; Postgres rollback also failed"
-                );
-            }
-            return Err(AppError::PreconditionFailed);
-        }
-        Err(e) => {
-            if let Err(rollback_err) =
-                db::delete_script_meta(&state.db, &user.user_id, &script_id).await
-            {
-                tracing::error!(
-                    script_id = %script_id,
-                    user_id = %user.user_id,
-                    r2_err = %e,
-                    rollback_err = %rollback_err,
-                    "R2 write failed; Postgres rollback also failed"
-                );
-            }
-            return Err(AppError::Internal(e));
-        }
-    };
 
     let mut resp_headers = HeaderMap::new();
     resp_headers.insert(
