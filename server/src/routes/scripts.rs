@@ -8,6 +8,81 @@ use serde_json::Value;
 
 use crate::{auth::AuthenticatedUser, db, error::AppError, state::AppState};
 
+const MAX_SCRIPT_NAME_LEN: usize = 100;
+const MAX_SCRIPT_VERSION_LEN: usize = 50;
+const MAX_TAG_COUNT: usize = 20;
+const MAX_TAG_LEN: usize = 50;
+const MAX_DESCRIPTION_LEN: usize = 500;
+const MAX_CONTENT_BYTES: usize = 1_048_576;
+
+fn validate_script_name(name: &str) -> Result<(), AppError> {
+    if name.is_empty() {
+        return Err(AppError::BadRequest("name must not be empty".into()));
+    }
+    if name.len() > MAX_SCRIPT_NAME_LEN {
+        return Err(AppError::BadRequest(format!(
+            "name exceeds maximum length of {}",
+            MAX_SCRIPT_NAME_LEN
+        )));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
+    {
+        return Err(AppError::BadRequest(
+            "name may only contain letters, numbers, hyphens, underscores, and dots".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_script_version(version: &str) -> Result<(), AppError> {
+    if version.is_empty() {
+        return Err(AppError::BadRequest("version must not be empty".into()));
+    }
+    if version.len() > MAX_SCRIPT_VERSION_LEN {
+        return Err(AppError::BadRequest(format!(
+            "version exceeds maximum length of {}",
+            MAX_SCRIPT_VERSION_LEN
+        )));
+    }
+    Ok(())
+}
+
+fn validate_tags(tags: &[String]) -> Result<(), AppError> {
+    if tags.len() > MAX_TAG_COUNT {
+        return Err(AppError::BadRequest(format!(
+            "too many tags: maximum is {}",
+            MAX_TAG_COUNT
+        )));
+    }
+    for tag in tags {
+        if tag.len() > MAX_TAG_LEN {
+            return Err(AppError::BadRequest(format!(
+                "tag '{}' exceeds maximum length of {}",
+                tag, MAX_TAG_LEN
+            )));
+        }
+        if tag.is_empty() {
+            return Err(AppError::BadRequest("tags must not be empty strings".into()));
+        }
+    }
+    Ok(())
+}
+
+fn validate_payload_size(payload: &Value) -> Result<(), AppError> {
+    let estimated = serde_json::to_vec(payload)
+        .map(|b| b.len())
+        .unwrap_or(usize::MAX);
+    if estimated > MAX_CONTENT_BYTES {
+        return Err(AppError::BadRequest(format!(
+            "payload exceeds maximum size of {} bytes",
+            MAX_CONTENT_BYTES
+        )));
+    }
+    Ok(())
+}
+
 pub async fn list_scripts(
     user: AuthenticatedUser,
     State(state): State<AppState>,
@@ -74,10 +149,7 @@ pub async fn put_script(
     headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> Result<impl IntoResponse, AppError> {
-    let if_match_raw = headers
-        .get("If-Match")
-        .and_then(|v| v.to_str().ok())
-        .map(|v| v.trim_matches('"').to_string());
+    validate_payload_size(&payload)?;
 
     let name = payload
         .get("name")
@@ -114,15 +186,27 @@ pub async fn put_script(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    if name.is_empty() {
-        return Err(AppError::BadRequest("missing name field".into()));
-    }
-    if version.is_empty() {
-        return Err(AppError::BadRequest("missing version field".into()));
-    }
+    validate_script_name(&name)?;
+    validate_script_version(&version)?;
+    validate_tags(&tags)?;
+
     if hash.is_empty() {
         return Err(AppError::BadRequest("missing metadata.hash field".into()));
     }
+
+    if let Some(ref desc) = description {
+        if desc.len() > MAX_DESCRIPTION_LEN {
+            return Err(AppError::BadRequest(format!(
+                "description exceeds maximum length of {}",
+                MAX_DESCRIPTION_LEN
+            )));
+        }
+    }
+
+    let if_match_raw = headers
+        .get("If-Match")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.trim_matches('"').to_string());
 
     let already_exists = db::script_meta_exists(&state.db, &user.user_id, &script_id)
         .await
