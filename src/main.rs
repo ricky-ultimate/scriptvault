@@ -66,9 +66,9 @@ fn run() -> Result<()> {
         Command::Recommend => vault::recommend_scripts()?,
         Command::Export(args) => vault::export_scripts(args)?,
         Command::Sync(sync_cmd) => match sync_cmd.action {
-            None => sync::pull_all()?,
-            Some(SyncAction::Push) => sync::push_all()?,
-            Some(SyncAction::Pull) => sync::pull_all()?,
+            None => sync::pull_all(false)?,
+            Some(SyncAction::Push(a)) => sync::push_all(a.dry_run)?,
+            Some(SyncAction::Pull(a)) => sync::pull_all(a.dry_run)?,
             Some(SyncAction::Status) => sync::show_status()?,
             Some(SyncAction::Resolve(args)) => {
                 let resolution = if args.take_local {
@@ -77,7 +77,7 @@ fn run() -> Result<()> {
                     sync::ConflictResolution::TakeRemote
                 } else {
                     return Err(anyhow!(
-                        "Specify --take-local or --take-remote to resolve the conflict"
+                        "Specify --take-local or --take-remote to resolve the conflict."
                     ));
                 };
                 sync::resolve_conflict(&args.script, resolution)?;

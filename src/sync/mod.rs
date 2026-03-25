@@ -25,25 +25,79 @@ fn build_manager() -> Result<SyncManager> {
     Ok(SyncManager::new(local, Box::new(remote)))
 }
 
-#[allow(dead_code)]
-pub fn sync_vault() -> Result<()> {
+pub fn push_all(dry_run: bool) -> Result<()> {
+    if dry_run {
+        return show_dry_run_push();
+    }
+    let manager = build_manager()?;
+    let report = manager.push_pending()?;
+    print_report(&report);
+    Ok(())
+}
+
+pub fn pull_all(dry_run: bool) -> Result<()> {
+    if dry_run {
+        return show_dry_run_pull();
+    }
     let manager = build_manager()?;
     let report = manager.full_sync()?;
     print_report(&report);
     Ok(())
 }
 
-pub fn push_all() -> Result<()> {
-    let manager = build_manager()?;
-    let report = manager.full_sync()?;
-    print_report(&report);
+fn show_dry_run_push() -> Result<()> {
+    let config = Config::load()?;
+    if !config.is_authenticated() {
+        return Err(anyhow!(
+            "Cloud sync requires authentication. Run 'sv auth login --token <API_KEY>'"
+        ));
+    }
+    let local = config.get_storage_backend()?;
+    let pending = local.list_pending_push()?;
+
+    if pending.is_empty() {
+        println!("{}", "Nothing to push.".green());
+        return Ok(());
+    }
+
+    println!("{}", "Dry run — scripts that would be pushed:".yellow().bold());
+    println!();
+    for script in &pending {
+        println!("  {} {}", script.name.yellow(), script.version.dimmed());
+    }
+    println!();
+    println!("Run 'sv sync push' without --dry-run to apply.");
     Ok(())
 }
 
-pub fn pull_all() -> Result<()> {
+fn show_dry_run_pull() -> Result<()> {
     let manager = build_manager()?;
-    let report = manager.full_sync()?;
-    print_report(&report);
+    let config = Config::load()?;
+    let local = config.get_storage_backend()?;
+
+    let local_scripts = local.list_scripts()?;
+    let remote_metas = manager.remote_list()?;
+
+    let local_names: std::collections::HashSet<String> =
+        local_scripts.iter().map(|s| s.name.clone()).collect();
+
+    let remote_only: Vec<_> = remote_metas
+        .iter()
+        .filter(|m| !local_names.contains(&m.name))
+        .collect();
+
+    if remote_only.is_empty() {
+        println!("{}", "Nothing to pull.".green());
+        return Ok(());
+    }
+
+    println!("{}", "Dry run — scripts that would be pulled:".yellow().bold());
+    println!();
+    for meta in &remote_only {
+        println!("  {} {}", meta.name.yellow(), meta.version.dimmed());
+    }
+    println!();
+    println!("Run 'sv sync pull' without --dry-run to apply.");
     Ok(())
 }
 
