@@ -16,7 +16,10 @@ pub struct Substitution {
     pub(crate) kind: &'static str,
 }
 
-pub(crate) fn build_substitutions(script_dir: Option<&str>, current_dir: Option<&str>) -> Vec<Substitution> {
+pub(crate) fn build_substitutions(
+    script_dir: Option<&str>,
+    current_dir: Option<&str>,
+) -> Vec<Substitution> {
     let mut subs: Vec<Substitution> = Vec::new();
 
     match (script_dir, current_dir) {
