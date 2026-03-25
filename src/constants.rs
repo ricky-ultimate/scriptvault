@@ -58,5 +58,5 @@ pub fn default_author() -> String {
 
 pub fn api_endpoint() -> String {
     env::var("SCRIPTVAULT_API_ENDPOINT")
-        .unwrap_or_else(|_| "https://scriptvault.fly.dev".to_string())
+        .unwrap_or_else(|_| "https://scriptvault.fly.dev/v1".to_string())
 }

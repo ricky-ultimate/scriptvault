@@ -1,6 +1,14 @@
 use anyhow::Result;
 use colored::*;
 
+fn health_url(api_endpoint: &str) -> String {
+    if let Some(base) = api_endpoint.strip_suffix("/v1") {
+        format!("{}/health", base)
+    } else {
+        format!("{}/health", api_endpoint)
+    }
+}
+
 pub fn run_doctor() -> Result<()> {
     println!("{}", "ScriptVault Health Check".cyan().bold());
     println!();
@@ -51,12 +59,13 @@ pub fn run_doctor() -> Result<()> {
     }
 
     let config = crate::config::Config::load()?;
+    let probe_url = health_url(&config.api_endpoint);
 
     println!();
     println!("  {}:", "Cloud sync".bold());
 
     print!("    API endpoint... ");
-    match ureq::get(&format!("{}/health", config.api_endpoint))
+    match ureq::get(&probe_url)
         .timeout(std::time::Duration::from_secs(5))
         .call()
     {
