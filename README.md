@@ -10,6 +10,24 @@ Scripts are globally available — save a deployment script in one project, run 
 
 ## Installation
 
+
+**Linux / macOS:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/ricky-ultimate/scriptvault/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+iwr https://raw.githubusercontent.com/ricky-ultimate/scriptvault/main/install.ps1 | iex
+```
+
+**To release a new version**, just tag and push:
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+**Build from source**
 Requires Rust (install via [rustup.rs](https://rustup.rs)).
 ```bash
 git clone https://github.com/ricky-ultimate/scriptvault
