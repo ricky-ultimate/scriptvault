@@ -2,7 +2,7 @@ use crate::cli::ExportArgs;
 use crate::cli::*;
 use crate::config::Config;
 use crate::context;
-use crate::script::{Script, ScriptLanguage, ScriptSummary, SyncStatus, Visibility};
+use crate::script::{Script, ScriptLanguage, ScriptSummary, SyncStatus};
 use crate::storage::ListOptions;
 use anyhow::{Context as _, Result, anyhow};
 use chrono::Utc;
@@ -894,31 +894,6 @@ pub fn checkout_version(args: CheckoutArgs) -> Result<()> {
         restored.version.green()
     );
 
-    Ok(())
-}
-
-pub fn share_script(_args: ShareArgs) -> Result<()> {
-    println!("Share command is not yet implemented.");
-    Ok(())
-}
-
-pub fn list_team_members() -> Result<()> {
-    println!("Team command is not yet implemented.");
-    Ok(())
-}
-
-pub fn list_team_scripts() -> Result<()> {
-    println!("Team command is not yet implemented.");
-    Ok(())
-}
-
-pub fn show_permissions() -> Result<()> {
-    println!("Permissions command is not yet implemented.");
-    Ok(())
-}
-
-pub fn recommend_scripts() -> Result<()> {
-    println!("Recommend command is not yet implemented.");
     Ok(())
 }
 

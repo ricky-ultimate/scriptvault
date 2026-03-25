@@ -14,7 +14,7 @@ mod versions;
 
 use anyhow::{Result, anyhow};
 use clap::Parser;
-use cli::{AuthAction, Cli, Command, SyncAction, TeamAction};
+use cli::{AuthAction, Cli, Command, SyncAction};
 use colored::*;
 
 fn main() {
@@ -57,14 +57,7 @@ fn run() -> Result<()> {
         Command::Versions(args) => vault::show_versions(args)?,
         Command::Diff(args) => vault::diff_versions(args)?,
         Command::Checkout(args) => vault::checkout_version(args)?,
-        Command::Share(args) => vault::share_script(args)?,
-        Command::Team(team_cmd) => match team_cmd.action {
-            TeamAction::Ls => vault::list_team_members()?,
-            TeamAction::Scripts => vault::list_team_scripts()?,
-            TeamAction::Permissions => vault::show_permissions()?,
-        },
         Command::Context => context::show_context()?,
-        Command::Recommend => vault::recommend_scripts()?,
         Command::Export(args) => vault::export_scripts(args)?,
         Command::Sync(sync_cmd) => match sync_cmd.action {
             None => sync::pull_all(false)?,

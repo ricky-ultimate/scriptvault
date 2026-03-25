@@ -30,10 +30,7 @@ pub enum Command {
     Versions(VersionArgs),
     Diff(DiffArgs),
     Checkout(CheckoutArgs),
-    Share(ShareArgs),
-    Team(TeamCommand),
     Context,
-    Recommend,
     Export(ExportArgs),
     Sync(SyncCommand),
     Storage(StorageCommand),
@@ -41,7 +38,6 @@ pub enum Command {
     Doctor,
     Status,
 }
-
 #[derive(Args, Debug)]
 pub struct AuthCommand {
     #[command(subcommand)]
