@@ -5,8 +5,7 @@ use axum::{
     middleware::Next,
 };
 use governor::{
-    DefaultDirectRateLimiter, Quota, RateLimiter,
-    clock::DefaultClock,
+    DefaultDirectRateLimiter, Quota, RateLimiter, clock::DefaultClock,
     state::keyed::DefaultKeyedStateStore,
 };
 use std::{
@@ -34,9 +33,9 @@ type IpRateLimiter = Arc<RateLimiter<IpAddr, DefaultKeyedStateStore<IpAddr>, Def
 fn global_limiter() -> &'static IpRateLimiter {
     static LIMITER: OnceLock<IpRateLimiter> = OnceLock::new();
     LIMITER.get_or_init(|| {
-        Arc::new(RateLimiter::keyed(
-            Quota::per_minute(NonZeroU32::new(120).unwrap()),
-        ))
+        Arc::new(RateLimiter::keyed(Quota::per_minute(
+            NonZeroU32::new(120).unwrap(),
+        )))
     })
 }
 
