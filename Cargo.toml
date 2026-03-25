@@ -32,7 +32,7 @@ git2 = { version = "0.18", features = ["vendored-libgit2"] }
 dialoguer = "0.11"
 which = "6.0"
 uuid = { version = "1.11", features = ["v4"] }
-ureq = { version = "2", features = ["json"] }
+ureq = { version = "2", features = ["json", "tls"], default-features = false }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
