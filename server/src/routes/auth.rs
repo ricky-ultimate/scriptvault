@@ -69,3 +69,18 @@ pub async fn me(user: AuthenticatedUser) -> Result<Json<MeResponse>, AppError> {
         username: user.username,
     }))
 }
+
+pub async fn rotate_token(
+    user: AuthenticatedUser,
+    State(state): State<AppState>,
+) -> Result<Json<RegisterResponse>, AppError> {
+    let new_key = db::rotate_api_key(&state.db, &user.user_id)
+        .await
+        .map_err(AppError::Internal)?;
+
+    Ok(Json(RegisterResponse {
+        api_key: new_key.plaintext,
+        user_id: user.user_id,
+        username: user.username,
+    }))
+}

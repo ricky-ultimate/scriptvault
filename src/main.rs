@@ -40,6 +40,8 @@ fn run() -> Result<()> {
             AuthAction::Logout => auth::logout()?,
             AuthAction::Status => auth::status()?,
             AuthAction::Register(args) => auth::register(args)?,
+            AuthAction::ShowToken => auth::show_token()?,
+            AuthAction::RotateToken => auth::rotate_token()?,
         },
         Command::Save(args) => vault::save_script(args)?,
         Command::Update(args) => vault::update_script_from_file(args)?,

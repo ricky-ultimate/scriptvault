@@ -108,6 +108,7 @@ async fn main() -> anyhow::Result<()> {
     let v1 = Router::new()
         .route("/auth/register", post(routes::auth::register))
         .route("/auth/me", get(routes::auth::me))
+        .route("/auth/rotate", post(routes::auth::rotate_token))
         .route("/scripts", get(routes::scripts::list_scripts))
         .route("/scripts/:id", get(routes::scripts::get_script))
         .route("/scripts/:id", put(routes::scripts::put_script))

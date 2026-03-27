@@ -243,3 +243,33 @@ pub async fn update_key_last_used(pool: &PgPool, key_id: &str) -> Result<()> {
         .await?;
     Ok(())
 }
+
+pub async fn rotate_api_key(pool: &PgPool, user_id: &str) -> Result<CreatedApiKey> {
+    let key_id = Uuid::new_v4().to_string();
+    let plaintext = generate_api_key();
+    let key_hash = hash_key(&plaintext);
+    let now = Utc::now();
+
+    let mut tx = pool.begin().await?;
+
+    sqlx::query("DELETE FROM api_keys WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+
+    sqlx::query(
+        "INSERT INTO api_keys (id, user_id, key_hash, label, created_at)
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(&key_id)
+    .bind(user_id)
+    .bind(&key_hash)
+    .bind("default")
+    .bind(now)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(CreatedApiKey { key_id, plaintext })
+}

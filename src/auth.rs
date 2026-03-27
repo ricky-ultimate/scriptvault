@@ -160,3 +160,92 @@ pub fn status() -> Result<()> {
 
     Ok(())
 }
+
+pub fn show_token() -> Result<()> {
+    let config = Config::load()?;
+
+    match &config.auth_token {
+        Some(token) => {
+            println!("{}", "API Key".cyan().bold());
+            println!();
+            println!("  {}", token.yellow());
+            println!();
+            println!("To log in on another machine:");
+            println!("  sv auth login --token {}", token);
+            println!();
+            println!("To generate a new key (this one will be revoked):");
+            println!("  sv auth rotate-token");
+        }
+        None => {
+            println!("{}", "No API key configured.".yellow());
+            println!();
+            println!("Run 'sv auth register' to create an account.");
+            println!("Run 'sv auth login --token <KEY>' to authenticate with an existing key.");
+        }
+    }
+
+    Ok(())
+}
+
+pub fn rotate_token() -> Result<()> {
+    let config = Config::load()?;
+
+    let token = config
+        .auth_token
+        .as_deref()
+        .ok_or_else(|| anyhow!("No API key configured. Run 'sv auth register' first."))?;
+
+    let endpoint = config.api_endpoint.clone();
+
+    println!("{}", "This will revoke your current API key.".yellow());
+    println!();
+
+    let confirmed = dialoguer::Confirm::new()
+        .with_prompt("Proceed?")
+        .default(false)
+        .interact()?;
+
+    if !confirmed {
+        println!("Cancelled.");
+        return Ok(());
+    }
+
+    #[derive(Deserialize)]
+    struct RotateResponse {
+        api_key: String,
+    }
+
+    let response = ureq::post(&format!("{}/auth/rotate", endpoint))
+        .set("Authorization", &format!("Bearer {}", token))
+        .set("Content-Type", "application/json")
+        .send_json(serde_json::json!({}))
+        .map_err(ureq_err)?;
+
+    let data: RotateResponse = response
+        .into_json()
+        .map_err(|e| anyhow!("Failed to parse server response: {}", e))?;
+
+    let mut updated_config = Config::load()?;
+    let user_id = updated_config
+        .user_id
+        .clone()
+        .ok_or_else(|| anyhow!("Missing user_id in config"))?;
+    let username = updated_config
+        .username
+        .clone()
+        .ok_or_else(|| anyhow!("Missing username in config"))?;
+
+    updated_config.set_api_key(data.api_key.clone(), user_id, username);
+    updated_config.save()?;
+
+    println!();
+    println!("{} New API key:", "✓".green().bold());
+    println!();
+    println!("  {}", data.api_key.yellow().bold());
+    println!();
+    println!("Save this key. The old key is now invalid.");
+    println!("To log in on another machine:");
+    println!("  sv auth login --token {}", data.api_key);
+
+    Ok(())
+}

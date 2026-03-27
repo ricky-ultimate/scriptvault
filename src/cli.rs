@@ -50,6 +50,8 @@ pub enum AuthAction {
     Logout,
     Status,
     Register(RegisterArgs),
+    ShowToken,
+    RotateToken,
 }
 
 #[derive(Args, Debug)]
