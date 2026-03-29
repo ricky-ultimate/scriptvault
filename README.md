@@ -1,216 +1,365 @@
 # ScriptVault
 
-A terminal script vault for developers. Save scripts from any project, run them from anywhere, sync across machines.
+> Your terminal script vault — save, organize, version, run, and sync scripts across machines.
 
-## What It Does
+---
 
-ScriptVault stores your shell scripts, Python scripts, and other executables in a personal vault at `~/.scriptvault/`. When you save a script, it captures the directory and git context so you can find relevant scripts later.
+## What is ScriptVault?
 
-Scripts are globally available — save a deployment script in one project, run it from any directory. Optionally sync to the cloud and access your vault from any machine.
+ScriptVault (`sv`) is a developer CLI tool that solves a problem every engineer eventually runs into: you write a useful script, and then you lose it, forget what it does, or can't find it when you're on a different machine.
+
+`sv` gives your scripts a home. Every script you save gets versioned, tagged, described, context-aware (knows which project it came from), and optionally synced to the cloud so it follows you everywhere.
+
+```bash
+# Save a script
+sv save deploy.sh --tags "production deploy" --description "Deploys the app"
+
+# Run it later, anywhere
+sv run deploy
+
+# See everything in your vault
+sv list
+```
+
+---
+
+## Features
+
+- **Save & organize** — store scripts with tags, descriptions, and auto-detected language
+- **Version history** — every save creates a version snapshot; diff, checkout, or restore any of them
+- **Context-aware** — scripts remember the git repo and directory they were saved from
+- **Run with safety** — dangerous pattern detection, dry-run mode, sandboxed execution
+- **Remote SSH execution** — run a vault script on any remote host without manually copying it
+- **Cloud sync** — push/pull scripts to a hosted server; full conflict detection and resolution
+- **Script adaptation** — automatically substitutes paths and home directories when sharing scripts between users or machines
+- **Export** — dump your entire vault to Markdown or JSON
+- **Health checks** — `sv doctor` verifies your environment, tools, and cloud connectivity
+
+---
 
 ## Installation
 
+### Linux / macOS
 
-**Linux / macOS:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ricky-ultimate/scriptvault/main/install.sh | bash
 ```
 
-**Windows (PowerShell):**
-```powershell
-iwr https://raw.githubusercontent.com/ricky-ultimate/scriptvault/main/install.ps1 | iex
+Then add to your shell profile if prompted:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-**Build from source**
-Requires Rust (install via [rustup.rs](https://rustup.rs)).
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/ricky-ultimate/scriptvault/main/install.ps1 | iex
+```
+
+### Build from Source
+
+Requires [Rust](https://rustup.rs/) (stable).
+
 ```bash
 git clone https://github.com/ricky-ultimate/scriptvault
 cd scriptvault
 ./build.sh --release --install
 ```
 
-Or with Cargo directly:
+Build options:
+
 ```bash
-cargo install --path .
+./build.sh             # debug build
+./build.sh --release   # optimized release build
+./build.sh --test      # build + run tests
+./build.sh --install   # build + install to ~/.local/bin
 ```
 
-Ensure `~/.local/bin` is in your `PATH`:
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
+---
 
 ## Quick Start
+
 ```bash
-sv doctor
-sv save ./deploy.sh --tags "deployment" --description "Deploy to staging"
+# 1. Set a local username (no account needed to get started)
+sv auth login --token myname
+
+# 2. Save a script
+sv save backup.sh --tags "server backup" --description "Daily backup"
+
+# 3. List your vault
 sv list
-sv run deploy
+
+# 4. Run a script
+sv run backup
+
+# 5. Check health
+sv doctor
 ```
 
-## Commands
+To enable cloud sync across machines:
 
-### Auth
 ```bash
+# Create an account
 sv auth register
-sv auth login --token <API_KEY>
-sv auth logout
-sv auth status
-```
 
-Register creates an account on the ScriptVault cloud and returns an API key. Use `sv auth login --token <key>` to authenticate on additional machines. Without an account, everything works locally — cloud sync is optional.
+# On another machine, log in with the API key you received
+sv auth login --token sv_4a2f...c91e
 
-### Saving Scripts
-```bash
-sv save ./script.sh
-sv save ./script.sh --name deploy-staging
-sv save ./script.sh --tags "deployment docker" --description "Deploy app" --yes
-```
-
-Re-saving a script after editing it on disk updates the vault and bumps the patch version. Use `sv update` if you want an explicit error when the script is not already in the vault:
-```bash
-sv update ./deploy.sh
-```
-
-### Finding Scripts
-```bash
-sv list
-sv list --recent
-
-sv find deploy
-sv find --tag deployment
-sv find --language bash
-sv find --here
-sv find --recent
-```
-
-`--here` filters to scripts saved from the current directory or git repo.
-
-### Running Scripts
-```bash
-sv run deploy
-sv run deploy --dry-run
-sv run deploy arg1 arg2
-sv run deploy --verbose
-sv run deploy --ci
-sv run deploy --update
-```
-
-Arguments after the script name are passed through to the script. `--verbose` prints the script content, interpreter, and arguments before execution. `--ci` skips all confirmation prompts. `--update` pulls the latest version from the cloud before running.
-
-#### Remote Execution
-```bash
-sv run deploy --ssh user@host
-sv run deploy --ssh user@host --ssh-port 2222
-sv run deploy --ssh user@host --ssh-identity ~/.ssh/id_ed25519
-sv run deploy --ssh user@host --ssh-agent
-```
-
-Copies the script to the remote host over SSH, executes it, and cleans up.
-
-### Managing Scripts
-```bash
-sv info deploy
-sv stats deploy
-sv cat deploy
-sv edit deploy
-sv rename deploy deploy-staging
-sv copy deploy deploy-prod
-sv delete deploy
-```
-
-`sv edit` opens the script in `$EDITOR`. `sv info` shows identity and context. `sv stats` shows execution statistics.
-
-### Version History
-```bash
-sv versions deploy
-sv diff deploy v1.0.0 v1.0.2
-sv checkout deploy@v1.0.0
-```
-
-Scripts start at `v1.0.0`. The patch version increments automatically whenever content changes. Up to 50 versions are retained per script.
-
-### History
-```bash
-sv history
-sv history deploy
-sv history --failed
-sv history --recent
-```
-
-### Adapt
-```bash
-sv adapt deploy
-sv adapt deploy --dry-run
-sv adapt deploy --output ./deploy-local.sh
-```
-
-Rewrites a script's hardcoded paths to match the current directory context. Useful when running a script saved on another machine.
-
-### Sync
-```bash
-sv sync
-sv sync status
+# Push your local scripts to the cloud
 sv sync push
-sv sync push --dry-run
+
+# Pull scripts on a new machine
 sv sync pull
-sv sync pull --dry-run
-sv sync resolve deploy --take-local
-sv sync resolve deploy --take-remote
 ```
 
-Requires a registered account. Syncs your local vault with the cloud. Conflict resolution is explicit — you choose which version wins.
+---
 
-### Export
-```bash
-sv export --format markdown --output SCRIPTS.md
-sv export --format json --output scripts.json
+## Usage
+
+```
+sv <COMMAND> [OPTIONS]
 ```
 
-### Storage
-```bash
-sv storage status
-sv storage setup
-sv storage test
-sv storage info
-```
+### Command Overview
 
-### Diagnostics
-```bash
-sv doctor
-sv status
-sv context
-```
+| Command | Description |
+|---------|-------------|
+| `sv auth` | Manage authentication (register, login, logout, status) |
+| `sv save <file>` | Save a script to the vault |
+| `sv update <file>` | Update an existing script from a file |
+| `sv list` | List all scripts in your vault |
+| `sv find / search` | Search scripts by name, tag, language, or context |
+| `sv info <name>` | Show detailed info about a script |
+| `sv cat <name>` | Print script content to stdout |
+| `sv run <name>` | Run a script from the vault |
+| `sv edit <name>` | Edit a script in your `$EDITOR` |
+| `sv rename <old> <new>` | Rename a script |
+| `sv copy <src> <dest>` | Copy a script under a new name |
+| `sv delete <name>` | Delete a script from the vault |
+| `sv history` | Show execution history |
+| `sv stats <name>` | Show execution statistics for a script |
+| `sv versions <name>` | List all versions of a script |
+| `sv diff <name> <v1> <v2>` | Diff two versions of a script |
+| `sv checkout <name>@<ver>` | Restore a script to a previous version |
+| `sv context` | Show the current detected context (directory, git, env) |
+| `sv adapt <name>` | Adapt a script's paths to the current environment |
+| `sv sync` | Sync scripts with the cloud |
+| `sv export` | Export vault to Markdown or JSON |
+| `sv storage` | Manage storage configuration |
+| `sv doctor` | Run a full environment health check |
+| `sv status` | Quick vault status overview |
 
-`sv doctor` checks your environment: config, vault directory, required interpreters, editor, SSH agent, and cloud connectivity. `sv context` shows the current directory and git context.
+For detailed usage of every command with examples and expected output, see the [Command Reference](./COMMANDS.md).
 
-## How Versioning Works
+---
 
-Scripts start at `v1.0.0`. The patch version increments automatically on any content change via `sv save`, `sv update`, `sv edit`, or `sv adapt`. Version is never decremented. `sv checkout` restores content from a previous version as a new version.
+## How It Works
 
-## Cloud Sync
+### Local Storage
 
-ScriptVault has an optional cloud backend. Register at the CLI with `sv auth register`, then use `sv sync` to push and pull scripts. Conflicts are flagged explicitly and resolved with `sv sync resolve`.
+Scripts are stored as JSON files in `~/.scriptvault/vault/`. Each file contains the script content alongside all its metadata — tags, description, language, execution stats, version, sync state, and the context it was saved from. No database required.
 
-The server is open source and self-hostable. See `server/` in the repository.
-
-## Directory Structure
 ```
 ~/.scriptvault/
-├── config.json
-├── history.jsonl
+├── config.json           # your configuration and credentials
+├── history.jsonl         # execution log (append-only, rotates at 1000 entries)
 └── vault/
-    ├── index.json
-    ├── <script-id>.json
+    ├── index.json         # name → id lookup index
+    ├── <script-id>.json   # one file per script
     └── history/
         └── <script-id>/
-            ├── manifest.json
-            └── <version>.json
+            ├── manifest.json       # version list
+            ├── v1.0.0.json         # version snapshots (max 50)
+            └── v1.0.1.json
 ```
 
-## Building from Source
+### Cloud Sync
+
+When authenticated, scripts can be pushed to and pulled from a hosted server backed by PostgreSQL (metadata) and Cloudflare R2 (script content). Sync uses hash-based conflict detection — if both local and remote have changed since the last sync, the script is flagged as a conflict for you to resolve manually.
+
 ```bash
-./build.sh
-./build.sh --release
-./build.sh --test
-./build.sh --release --install
+sv sync push               # push all pending-push scripts
+sv sync pull               # pull remote-only and pending-pull scripts
+sv sync status             # view sync state of every script
+sv sync resolve deploy --take-local    # resolve a conflict
 ```
+
+### Context Awareness
+
+When you save a script, ScriptVault captures your current directory and git repository. When you run `sv find --here`, it only returns scripts that match your current context — same git repo or same directory tree. When sharing scripts with `sv adapt`, path substitutions are applied automatically.
+
+---
+
+## Script Language Support
+
+Language is detected automatically from the file extension:
+
+| Extension | Language | Interpreter |
+|-----------|----------|-------------|
+| `.sh` | Shell | `sh` |
+| `.bash` | Bash | `bash` |
+| `.py` | Python | `python3` |
+| `.js` | JavaScript | — |
+| `.rb` | Ruby | `ruby` |
+| `.pl` | Perl | `perl` |
+| `.ps1` | PowerShell | `powershell -File` |
+| `.bat` / `.cmd` | Batch | — |
+
+---
+
+## Safety
+
+ScriptVault checks every script for dangerous patterns before execution and warns you if any are detected:
+
+```
+rm -rf /         rm -rf /*        mkfs
+dd if=           > /dev/sda       :(){ :|:& };:
+chmod -R 777 /   > /dev/sd        mkfs.ext
+```
+
+You can also use `--dry-run` to inspect what a script would do without executing it, or `--sandbox` to run in an isolated temp directory with a stripped-down environment.
+
+> **Note:** `--sandbox` provides directory isolation and environment clearing — it does not provide kernel-level sandboxing or syscall filtering.
+
+---
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `SCRIPTVAULT_HOME` | Override the default `~/.scriptvault` directory |
+| `SCRIPTVAULT_CI` | Set to `1` to disable all interactive prompts (equivalent to `--ci`) |
+| `SCRIPTVAULT_API_ENDPOINT` | Override the default API server URL |
+| `EDITOR` / `VISUAL` | Editor used by `sv edit` |
+
+---
+
+## Configuration
+
+Your config lives at `~/.scriptvault/config.json` and is managed automatically. Key fields:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `api_endpoint` | `https://scriptvault.fly.dev/v1` | Cloud API URL |
+| `vault_path` | `~/.scriptvault/vault` | Local script storage path |
+| `auto_sync` | `false` | Reserved for future automatic background sync |
+| `confirm_before_run` | `true` | Whether `sv run` prompts for confirmation |
+| `default_visibility` | `private` | Default visibility for new scripts |
+
+You can relocate your vault with:
+
+```bash
+sv storage setup
+```
+
+---
+
+## Development
+
+### Prerequisites
+
+- Rust stable (install via [rustup.rs](https://rustup.rs/))
+
+### Build & Test
+
+```bash
+# Clone the repo
+git clone https://github.com/ricky-ultimate/scriptvault
+cd scriptvault
+
+# Run tests
+cargo test
+
+# Debug build
+cargo build
+
+# Run the demo walkthrough (requires a debug build)
+./demo.sh
+```
+
+### Project Structure
+
+```
+scriptvault/
+├── src/
+│   ├── main.rs          # CLI entrypoint and command dispatch
+│   ├── lib.rs           # Library root (re-exports for integration tests)
+│   ├── cli.rs           # Clap argument definitions
+│   ├── script.rs        # Core data types (Script, SyncStatus, etc.)
+│   ├── vault.rs         # Save, list, find, delete, export operations
+│   ├── execution.rs     # Script running, history, sandboxing
+│   ├── auth.rs          # Register, login, logout
+│   ├── config.rs        # Config loading and saving
+│   ├── context.rs       # Git and directory context detection
+│   ├── adapt.rs         # Path substitution for script adaptation
+│   ├── versions.rs      # Version snapshot storage and diffing
+│   ├── utils.rs         # Doctor and status checks
+│   ├── storage/
+│   │   ├── mod.rs       # StorageBackend trait definition
+│   │   ├── local.rs     # Local filesystem implementation
+│   │   └── commands.rs  # `sv storage` subcommands
+│   └── sync/
+│       ├── mod.rs       # Push/pull/resolve entry points
+│       ├── manager.rs   # Sync logic and conflict detection
+│       └── remote.rs    # HTTP remote backend implementation
+├── server/              # Cloud sync server (Axum + PostgreSQL + R2)
+├── tests/
+│   └── integration_test.rs
+├── build.sh             # Dev build helper
+├── demo.sh              # Interactive feature demo
+├── install.sh           # Unix installer
+└── install.ps1          # Windows installer
+```
+
+### Running the Server Locally
+
+```bash
+cd server
+cp .env.example .env     # fill in DATABASE_URL, R2_*, etc.
+cargo run
+```
+
+Or with Docker:
+
+```bash
+cd server
+docker build -t scriptvault-server .
+docker run -p 8080:8080 --env-file .env scriptvault-server
+```
+
+---
+
+## Releases
+
+Binaries are built automatically via GitHub Actions on every version tag push (`v*`). The following targets are supported:
+
+| Platform | Architecture | File |
+|----------|-------------|------|
+| Linux | x86_64 (glibc) | `sv-linux-x86_64.tar.gz` |
+| Linux | x86_64 (musl) | `sv-linux-x86_64-musl.tar.gz` |
+| Linux | aarch64 | `sv-linux-aarch64.tar.gz` |
+| macOS | x86_64 | `sv-macos-x86_64.tar.gz` |
+| macOS | Apple Silicon | `sv-macos-aarch64.tar.gz` |
+| Windows | x86_64 | `sv-windows-x86_64.zip` |
+
+SHA256 checksums are included with every release.
+
+To cut a release:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+---
+
+## License
+
+MIT — see [LICENSE](./LICENSE).
+
+---
+
+## Author
+
+Built by [リッキー](https://github.com/ricky-ultimate).
